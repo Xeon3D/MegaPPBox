@@ -209,6 +209,14 @@ extern int      time_sync;                  /* (C) enable time sync */
 extern int      hdd_format_type;            /* (C) hard disk file format */
 extern int      confirm_reset;              /* (G) enable reset confirmation */
 extern int      confirm_exit;               /* (G) enable exit confirmation */
+extern int      update_check;               /* (G) MegaPPBox: how often to look for a
+                                                   new release on GitHub: 0 never,
+                                                   1 hourly, 2 daily, 3 weekly,
+                                                   4 monthly */
+extern int      update_on_startup;          /* (G) MegaPPBox: also look once at
+                                                   every start */
+extern long long update_last_check;         /* (G) MegaPPBox: when the last look
+                                                   finished, Unix seconds; 0 = never */
 extern int      confirm_save;               /* (G) enable save confirmation */
 extern int      chd_precache_level;         /* (G) CHD precache level */
 extern int      enable_discord;             /* (C) enable Discord integration */

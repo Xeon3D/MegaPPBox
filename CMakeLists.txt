@@ -38,11 +38,41 @@ endif()
 # MegaPPBox's own version (window title, About, file version).  The project
 # VERSION below stays upstream's: it reaches the guest (IDE/SCSI firmware
 # revisions, SPD revision codes), and the games must see the same hardware.
-set(MEGAPPBOX_VERSION "1.03")
+set(MEGAPPBOX_VERSION "1.04")
 string(REPLACE "." ";" MEGAPPBOX_VERSION_LIST ${MEGAPPBOX_VERSION})
 list(GET MEGAPPBOX_VERSION_LIST 0 MEGAPPBOX_VERSION_MAJ)
 list(GET MEGAPPBOX_VERSION_LIST 1 MEGAPPBOX_VERSION_MIN)
 math(EXPR MEGAPPBOX_VERSION_MIN "${MEGAPPBOX_VERSION_MIN}")
+
+# The release this build is, for the updater (as PeepeeBox): the release
+# workflow passes in the tag it is publishing under; a local build works the
+# number out of git, with a "+" when the commit is past that tag so an untagged
+# build cannot claim to be the release itself.  No tags, or no git: "dev",
+# which reports new releases but never installs one.
+find_package(Git QUIET)
+if(NOT MEGAPPBOX_RELEASE AND GIT_FOUND)
+    execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --abbrev=0 --match v[0-9]*
+                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    OUTPUT_VARIABLE MPB_REL_TAG
+                    OUTPUT_STRIP_TRAILING_WHITESPACE
+                    ERROR_QUIET)
+    execute_process(COMMAND ${GIT_EXECUTABLE} describe --tags --exact-match --match v[0-9]*
+                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                    RESULT_VARIABLE MPB_REL_INEXACT
+                    OUTPUT_QUIET
+                    ERROR_QUIET)
+    if(MPB_REL_TAG)
+        string(REGEX REPLACE "^v" "" MPB_REL_TAG "${MPB_REL_TAG}")
+        if(MPB_REL_INEXACT)
+            set(MEGAPPBOX_RELEASE "${MPB_REL_TAG}+")
+        else()
+            set(MEGAPPBOX_RELEASE "${MPB_REL_TAG}")
+        endif()
+    endif()
+endif()
+if(NOT MEGAPPBOX_RELEASE)
+    set(MEGAPPBOX_RELEASE "dev")
+endif()
 
 project(MegaPPBox
     VERSION 7.0

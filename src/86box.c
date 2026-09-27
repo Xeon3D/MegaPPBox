@@ -177,6 +177,11 @@ int      fpu_softfloat                          = 0;              /* (C) fpu use
 int      time_sync                              = 0;              /* (C) enable time sync */
 int      confirm_reset                          = 1;              /* (G) enable reset confirmation */
 int      confirm_exit                           = 1;              /* (G) enable exit confirmation */
+int      update_check                           = 2;              /* (G) MegaPPBox: look for a new release
+                                                                         daily unless told otherwise */
+int      update_on_startup                      = 1;              /* (G) MegaPPBox: and once at every start */
+long long update_last_check                     = 0;              /* (G) MegaPPBox: Unix time of the last
+                                                                         completed look, 0 = never */
 int      confirm_save                           = 1;              /* (G) enable save confirmation */
 int      chd_precache_level                     = 0;              /* (G) CHD precache level */
 int      enable_discord                         = 0;              /* (C) enable Discord integration */

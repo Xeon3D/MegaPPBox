@@ -148,6 +148,13 @@ add_library(ui STATIC
     qt_preferences.ui
 
     qt_preferencesemulator.cpp
+    qt_preferencesupdates.cpp
+    qt_preferencesupdates.hpp
+    qt_preferencesupdates.ui
+    qt_autoupdate.hpp
+    qt_autoupdate.cpp
+    qt_ziparchive.hpp
+    qt_ziparchive.cpp
     qt_preferencesemulator.hpp
     qt_preferencesemulator.ui
     qt_preferencesinput.cpp

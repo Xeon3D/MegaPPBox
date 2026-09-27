@@ -72,6 +72,7 @@ extern "C" {
 
 #include "qt_defs.hpp"
 #include "qt_mainwindow.hpp"
+#include "qt_autoupdate.hpp"
 #include "qt_machinemanager.hpp"
 #include "qt_megatouch_ident.hpp"
 #include "qt_preferences.hpp"
@@ -810,6 +811,11 @@ main(int argc, char *argv[])
     pc_close(nullptr);
     endblit();
 
+    /* MegaPPBox: an installed update was accepted with a restart.  Now, with
+       the image closed and the config and CMOS written, is when the new build
+       can be started without the two fighting over them. */
+    if (AutoUpdate::restartRequested())
+        AutoUpdate::relaunch();
     return ret;
 }
 

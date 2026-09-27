@@ -21,6 +21,7 @@
 #include <QDebug>
 
 #include "qt_mainwindow.hpp"
+#include "qt_autoupdate.hpp"
 #include "qt_megatouch_ident.hpp"
 #include "ui_qt_mainwindow.h"
 
@@ -1136,6 +1137,22 @@ MainWindow::MainWindow(QWidget *parent)
 #endif
 
     updateShortcuts();
+
+    /* MegaPPBox: automatic updates (as PeepeeBox).  Whatever the last update
+       could not delete from under itself goes first; then the schedule starts. */
+    AutoUpdate::cleanupLeftovers();
+    (new AutoUpdate(this))->start();
+}
+
+/* MegaPPBox: the way out after an update has been installed and a restart
+   accepted.  The confirmation is skipped because the question was just asked
+   in other words; the shutdown itself is the ordinary one, and the relaunch
+   happens in main() once it is complete. */
+void
+MainWindow::quitForUpdate()
+{
+    skip_exit_confirmation = true;
+    on_actionExit_triggered();
 }
 
 void

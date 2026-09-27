@@ -1,0 +1,118 @@
+/*
+ * MegaPPBox - Merit Megatouch cabinets on 86Box.
+ *
+ *          The Updates preferences page: when to look for a new release,
+ *          a look right now, and the Update button and release notes for
+ *          one that was found.
+ *          Ported from PeepeeBox.
+ *
+ * Authors: MegaPPBox contributors
+ *
+ *          Released under the GNU General Public License version 2 or
+ *          later.  See COPYING for more information.
+ */
+#include "qt_preferencesupdates.hpp"
+#include "ui_qt_preferencesupdates.h"
+#include "qt_autoupdate.hpp"
+
+#include <QDateTime>
+#include <QLocale>
+
+extern "C" {
+#include <86box/86box.h>
+#include <86box/version.h>
+}
+
+PreferencesUpdates::PreferencesUpdates(QWidget *parent)
+    : QWidget(parent)
+    , ui(new Ui::PreferencesUpdates)
+{
+    ui->setupUi(this);
+
+    ui->checkBoxOnStartup->setChecked(update_on_startup > 0);
+    /* The combo's rows are the setting's values in order: never, hourly,
+       daily, weekly, monthly. */
+    ui->comboBoxInterval->setCurrentIndex(update_check);
+
+    if (auto *updater = AutoUpdate::instance()) {
+        ui->labelStatus->setText(updater->lastStatusText());
+        connect(updater, &AutoUpdate::status, this, &PreferencesUpdates::showStatus);
+        connect(updater, &AutoUpdate::availableChanged, this, &PreferencesUpdates::refresh);
+    }
+
+    refresh();
+}
+
+PreferencesUpdates::~PreferencesUpdates()
+{
+    delete ui;
+}
+
+/* The versions line and the buttons follow the updater: which release this
+   is, which one is waiting if any, and whether anything is going on. */
+void
+PreferencesUpdates::refresh()
+{
+    auto *updater = AutoUpdate::instance();
+    const QString current = QString::fromLatin1(MEGAPPBOX_RELEASE);
+
+    if (updater == nullptr) {
+        ui->labelVersions->setText(tr("This is MegaPPBox %1.").arg(current));
+        ui->pushButtonCheckNow->setEnabled(false);
+        ui->pushButtonUpdate->setEnabled(false);
+    } else if (updater->hasAvailable()) {
+        ui->labelVersions->setText(tr("This is MegaPPBox %1. Release %2 is available.").arg(current, updater->availableVersion()));
+        ui->pushButtonUpdate->setText(tr("Update to %1").arg(updater->availableVersion()));
+        ui->pushButtonCheckNow->setEnabled(!updater->busy());
+        ui->pushButtonUpdate->setEnabled(!updater->busy());
+    } else {
+        ui->labelVersions->setText(tr("This is MegaPPBox %1.").arg(current));
+        ui->pushButtonUpdate->setText(tr("Update"));
+        ui->pushButtonCheckNow->setEnabled(!updater->busy());
+        ui->pushButtonUpdate->setEnabled(false);
+    }
+
+    /* The release notes of the waiting release take the space the spacer
+       keeps free at the bottom otherwise.  They are only set when the release
+       changes, so a refresh does not scroll them back to the top. */
+    const bool notes = (updater != nullptr) && updater->hasAvailable() && !updater->availableNotes().isEmpty();
+    if (notes && (notesVersion != updater->availableVersion())) {
+        notesVersion = updater->availableVersion();
+        ui->groupBoxNotes->setTitle(tr("What's new in %1").arg(notesVersion));
+        ui->textBrowserNotes->setMarkdown(updater->availableNotes());
+    }
+    ui->groupBoxNotes->setVisible(notes);
+    ui->verticalSpacer->changeSize(20, notes ? 0 : 40, QSizePolicy::Minimum, notes ? QSizePolicy::Fixed : QSizePolicy::Expanding);
+    ui->verticalLayout->invalidate();
+
+    ui->labelLastCheck->setText(update_last_check > 0
+        ? tr("Last checked: %1").arg(QLocale().toString(QDateTime::fromSecsSinceEpoch(update_last_check), QLocale::ShortFormat))
+        : tr("Last checked: never"));
+}
+
+void
+PreferencesUpdates::showStatus(const QString &text)
+{
+    ui->labelStatus->setText(text);
+}
+
+void
+PreferencesUpdates::on_pushButtonCheckNow_clicked()
+{
+    if (auto *updater = AutoUpdate::instance())
+        updater->checkNow(AutoUpdate::Trigger::Manual);
+}
+
+void
+PreferencesUpdates::on_pushButtonUpdate_clicked()
+{
+    if (auto *updater = AutoUpdate::instance())
+        updater->installAvailable();
+}
+
+void
+PreferencesUpdates::save()
+{
+    update_on_startup = ui->checkBoxOnStartup->isChecked() ? 1 : 0;
+    update_check      = ui->comboBoxInterval->currentIndex();
+}

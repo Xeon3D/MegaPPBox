@@ -9,7 +9,7 @@
 #
 # Only a tagged commit is published:
 #
-#     git tag -a v1.03 -m "..." && git push origin main v1.03
+#     git tag -a v1.04 -m "..." && git push origin main v1.04
 #
 # The release number shown to the user comes from MEGAPPBOX_VERSION in
 # CMakeLists.txt; the tag must match it.  The notes are docs/release-notes/<tag>.md,
@@ -21,6 +21,10 @@ on:
   push:
     branches:
       - main
+    # A release tag always builds and publishes, whatever its commit touches
+    # (path filters do not apply to tag pushes).
+    tags:
+      - "v*"
     paths:
       - src/**
       - cmake/**
@@ -104,6 +108,7 @@ jobs:
       - name: Configure
         run: >-
           cmake -S . -B build --preset regular -D NEW_DYNAREC=off -D QT=on
+          -D "MEGAPPBOX_RELEASE=${{ needs.version.outputs.release }}"
 
       - name: Build
         run: cmake --build build
@@ -163,6 +168,7 @@ jobs:
         run: >-
           cmake -S . -B build --preset regular
           -D NEW_DYNAREC=off -D QT=on -D USE_QT6=off
+          -D "MEGAPPBOX_RELEASE=${{ needs.version.outputs.release }}"
 
       - name: Build
         run: cmake --build build
@@ -208,6 +214,7 @@ jobs:
         run: >-
           cmake -S . -B build --preset regular
           -D NEW_DYNAREC=on
+          -D "MEGAPPBOX_RELEASE=${{ needs.version.outputs.release }}"
           -D QT=on
           -D Qt5_ROOT=$(brew --prefix qt@5)
           -D Qt5LinguistTools_ROOT=$(brew --prefix qt@5)
@@ -239,7 +246,9 @@ jobs:
     needs: [version, windows, linux, macos]
     # Named versions only.  An untagged push has already done the useful part by
     # building; its binaries are on the run page as artifacts.
-    if: needs.version.outputs.tag != ''
+    # Published by the tag's own run (or a manual one), not also by the run of a
+    # branch push that happens to carry the tag.
+    if: needs.version.outputs.tag != '' && (startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     steps:
       # gh resolves the repository from the checkout, and the tag has to exist here

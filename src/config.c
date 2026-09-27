@@ -146,6 +146,17 @@ load_global_emulator(void)
     color_scheme  = ini_section_get_int(cat, "color_scheme", 0);
 
     chd_precache_level = ini_section_get_int(cat, "chd_precache_level", 0);
+
+    /* MegaPPBox: automatic updates.  The timestamp is kept as a string because
+       the ini integer getters are 32-bit and Unix seconds outgrow that in 2038. */
+    update_check = ini_section_get_int(cat, "update_check", 2);
+    if ((update_check < 0) || (update_check > 4))
+        update_check = 2;
+    update_on_startup = ini_section_get_int(cat, "update_on_startup", 1);
+    p = ini_section_get_string(cat, "update_last_check", NULL);
+    update_last_check = (p != NULL) ? strtoll(p, NULL, 10) : 0;
+    if (update_last_check < 0)
+        update_last_check = 0;
 }
 
 static void
@@ -2238,6 +2249,25 @@ save_global_emulator(void)
         ini_section_set_int(cat, "chd_precache_level", chd_precache_level);
     else
         ini_section_delete_var(cat, "chd_precache_level");
+
+    /* MegaPPBox: automatic updates.  Daily is the default, so a default
+       config file stays free of the key. */
+    if (update_check != 2)
+        ini_section_set_int(cat, "update_check", update_check);
+    else
+        ini_section_delete_var(cat, "update_check");
+
+    if (update_on_startup != 1)
+        ini_section_set_int(cat, "update_on_startup", update_on_startup);
+    else
+        ini_section_delete_var(cat, "update_on_startup");
+
+    if (update_last_check > 0) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%lld", update_last_check);
+        ini_section_set_string(cat, "update_last_check", buf);
+    } else
+        ini_section_delete_var(cat, "update_last_check");
 
     ini_delete_section_if_empty(global, cat);
 }
