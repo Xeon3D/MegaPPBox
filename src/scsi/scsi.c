@@ -1,0 +1,213 @@
+/*
+ * 86Box    A hypervisor and IBM PC system emulator that specializes in
+ *          running old operating systems and software designed for IBM
+ *          PC systems and compatibles from 1981 through fairly recent
+ *          system designs based on the PCI bus.
+ *
+ *          This file is part of the 86Box distribution.
+ *
+ *          Handling of the SCSI controllers.
+ *
+ * Authors: Miran Grca, <mgrca8@gmail.com>
+ *          Fred N. van Kempen, <decwiz@yahoo.com>
+ *          TheCollector1995, <mariogplayer@gmail.com>
+ *
+ *          Copyright 2016-2018 Miran Grca.
+ *          Copyright 2017-2018 Fred N. van Kempen.
+ */
+#include <stdarg.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <wchar.h>
+#define HAVE_STDARG_H
+#include <86box/86box.h>
+#include <86box/device.h>
+#include <86box/machine.h>
+#include <86box/hdc.h>
+#include <86box/hdd.h>
+#include <86box/plat.h>
+#include <86box/scsi.h>
+#include <86box/sound.h>
+#include <86box/scsi_device.h>
+#include <86box/cdrom.h>
+#include <86box/scsi_disk.h>
+
+int scsi_card_current[SCSI_CARD_MAX] = { 0, 0, 0, 0 };
+double scsi_bus_speed[SCSI_BUS_MAX] = { 0.0, 0.0, 0.0, 0.0 };
+
+static uint8_t next_scsi_bus = 0;
+
+typedef const struct {
+    const device_t *device;
+} SCSI_CARD;
+
+static SCSI_CARD scsi_cards[] = {
+    // clang-format off
+    /* No Megatouch cabinet has a SCSI controller.  The SCSI device layer stays:
+       the ATAPI CD-ROM and hard disk code is built on it. */
+    { &device_none,              },
+    { NULL,                      },
+    // clang-format on
+};
+
+void
+scsi_reset(void)
+{
+    next_scsi_bus = 0;
+}
+
+uint8_t
+scsi_get_bus(void)
+{
+    uint8_t ret = next_scsi_bus;
+
+    if (next_scsi_bus >= SCSI_BUS_MAX)
+        return 0xff;
+
+    next_scsi_bus++;
+
+    return ret;
+}
+
+int
+scsi_card_available(int card)
+{
+    if (scsi_cards[card].device)
+        return (device_available(scsi_cards[card].device));
+
+    return 1;
+}
+
+const device_t *
+scsi_card_getdevice(int card)
+{
+    return (scsi_cards[card].device);
+}
+
+int
+scsi_card_has_config(int card)
+{
+    if (!scsi_cards[card].device)
+        return 0;
+
+    return (device_has_config(scsi_cards[card].device) ? 1 : 0);
+}
+
+const char *
+scsi_card_get_internal_name(int card)
+{
+    return device_get_internal_name(scsi_cards[card].device);
+}
+
+int
+scsi_card_get_from_internal_name(char *s)
+{
+    int c = 0;
+
+    while (scsi_cards[c].device != NULL) {
+        if (!strcmp(scsi_cards[c].device->internal_name, s))
+            return c;
+        c++;
+    }
+
+    return 0;
+}
+
+void
+scsi_card_init(void)
+{
+    int max = SCSI_CARD_MAX;
+
+    /* Do not initialize any controllers if we have do not have any SCSI
+           bus left. */
+    if (max > 0) {
+        for (int i = 0; i < max; i++) {
+            if ((scsi_card_current[i] > 0) && scsi_cards[scsi_card_current[i]].device)
+                device_add_inst(scsi_cards[scsi_card_current[i]].device, i + 1);
+        }
+    }
+}
+
+void
+scsi_bus_set_speed(uint8_t bus, double speed)
+{
+    scsi_bus_speed[bus] = speed;
+}
+
+double
+scsi_bus_get_speed(uint8_t bus)
+{
+    return scsi_bus_speed[bus];
+}
+
+/* The buses a device takes, read with its instance's configuration: a SCSI
+   card one unless it says otherwise, anything else none unless it does. */
+static int
+scsi_plan_buses(const device_t *dev, int inst, int is_card)
+{
+    int buses = is_card;
+
+    if ((dev != NULL) && (dev->scsi_buses != NULL)) {
+        device_context_inst(dev, inst);
+        buses = (int) dev->scsi_buses(dev);
+        device_context_restore();
+    }
+
+    return (dev != NULL) ? buses : 0;
+}
+
+static void
+scsi_plan_take(bus_owner_t owners[SCSI_BUS_MAX], int *next, int buses, const device_t *dev, int inst, int onboard)
+{
+    for (int i = 0; (i < buses) && (*next < SCSI_BUS_MAX); i++, (*next)++) {
+        owners[*next].device   = dev;
+        owners[*next].instance = inst;
+        owners[*next].onboard  = onboard;
+    }
+}
+
+int
+scsi_plan(bus_owner_t owners[SCSI_BUS_MAX], int mach, const int snd[], const int scsi[])
+{
+    const machine_t *m    = &machines[mach];
+    int              next = 0;
+
+    memset(owners, 0, SCSI_BUS_MAX * sizeof(bus_owner_t));
+
+    /* In the order they start, each taking the next bus: the machine's own
+       SCSI, its sound, the sound cards, then the SCSI cards. */
+    scsi_plan_take(owners, &next, scsi_plan_buses(m->scsi_device, 1, 1), m->scsi_device, 1, 1);
+    if ((snd[0] == SOUND_INTERNAL) && (m->snd_device != NULL))
+        scsi_plan_take(owners, &next, scsi_plan_buses(m->snd_device, 1, 0), m->snd_device, 1, 1);
+    for (int i = 0; i < SOUND_CARD_MAX; i++) {
+        if (snd[i] > SOUND_INTERNAL) {
+            const device_t *dev = sound_card_getdevice(snd[i]);
+
+            scsi_plan_take(owners, &next, scsi_plan_buses(dev, i + 1, 0), dev, i + 1, 0);
+        }
+    }
+    for (int i = 0; i < SCSI_CARD_MAX; i++) {
+        if (scsi[i] > 0) {
+            const device_t *dev = scsi_card_getdevice(scsi[i]);
+
+            scsi_plan_take(owners, &next, scsi_plan_buses(dev, i + 1, 1), dev, i + 1, 0);
+        }
+    }
+
+    return next;
+}
+
+/* Whether the machine took as many buses as the plan gives, which the
+   settings show: a device taking a bus without saying so in its
+   scsi_buses() turns up here. */
+void
+scsi_plan_check(void)
+{
+    bus_owner_t owners[SCSI_BUS_MAX];
+    const int   planned = scsi_plan(owners, machine, sound_card_current, scsi_card_current);
+
+    if (planned != next_scsi_bus)
+        warning("SCSI: the machine has %i buses, but the settings show %i\n", next_scsi_bus, planned);
+}

@@ -1,0 +1,207 @@
+MegaPPBox
+=========
+
+**MegaPPBox is a fork of [86Box](https://github.com/86Box/86Box) stripped down to
+the Merit Megatouch XL and MAXX countertop cabinets, so that untouched disk and CD
+images run with zero bytes changed.**
+
+The games check their hardware: a Dallas security key on the Merit I/O board
+(a DS1205 MultiKey or a DS1991 iButton), the model string of the hard disk, a
+CPUID-capable CPU, and on the Linux releases the motherboard's PCI devices. MegaPPBox answers
+those checks in emulated hardware — no patched executables, no bypass.
+
+Everything else about each machine is fixed by its hardware profile, and a
+Machine Manager picks the profile and key from what the image says it is.
+
+Credit
+------
+
+**All credit for the emulator itself belongs to the 86Box project and its
+authors** (see [AUTHORS](AUTHORS)). MegaPPBox is a little Megatouch-specific
+hardware and a lot of deletion on top of their work. The I/O map and key wiring
+of the XL generation were cross-checked against MAME's `mtouchxl` driver, whose
+DS1205 emulation (smf, Carl) the early XL key follows, and from whose sets the
+early U12 ROM, the Gold battery RAM image and the MultiKey dumps come; the DS1991
+dumps are in keyflasher's format. Modelled on PeepeeBox, a sibling fork for the
+funworld Photo Play cabinets, from which the toolbar coin and calibrate icons also
+come.
+
+Released under the GNU General Public License version 2 or later, the same as
+86Box. See [COPYING](COPYING).
+
+Running it
+----------
+
+A MegaPPBox folder is one cabinet:
+
+```
+MegaPPBox.exe
+roms\        the ROM set (board and video BIOSes, the I/O board ROM, settled CMOS)
+```
+
+The security keys are built into `MegaPPBox.exe`; a `keys\` folder is only
+needed for dumps of your own.
+
+Run `MegaPPBox.exe`. The first time, the **Machine Manager** opens: point it at a
+folder of images (it searches subfolders too), pick one and press **Run**. It
+remembers the pick, so the next start boots straight into it; open the manager
+again from the toolbar (or *Tools → Machine Manager…*) to switch, which rebuilds
+the machine on a hard reset. The manager reads the folder afresh each time it
+opens.
+
+Everything the folder needs lives inside it — all settings in `MegaPPBox.cfg`
+(including the images folder and the image in use), the CMOS in `nvr\` —
+whatever the working directory, so two folders are two independent cabinets.
+`-P <folder>` still points it elsewhere. A folder from an earlier build is taken
+over at the first start: `86box.cfg` becomes `MegaPPBox.cfg`, and
+`86box_global.cfg` and `megappbox-library.ini` are folded in and removed.
+
+**The games write to their disks** (`NVRAM.DAT`, `DEBUG.DAT`, operator settings).
+The manager runs images in place, so point it at copies, not at your only copy.
+
+Hardware profiles
+-----------------
+
+| Profile | Board (stands in for) | CPU | RAM | Video | Sound |
+|---|---|---|---|---|---|
+| XL (CD Boot) | ASUS PVI-486SP3, SiS 496 (Telco 486) | Enhanced Am486DX4 100 | 32 MB | Cirrus CL-GD5430 | CS4231A on the I/O board |
+| XL (CD Boot, early) | same | same | 32 MB | same | same |
+| XL (HDD Boot) | same | same | 32 MB | same | same |
+| MAXX (Old) | ASUS TX97, i430TX (Mitsubishi/Apricot) | IDT WinChip C6 200 | 32 MB | ATI 264VT3 | Crystal CS4236B |
+| MAXX (New) | same | Pentium 200 | 64 MB | ATI 264VT3 | C-Media CMI8738 |
+
+None of the original boards is in 86Box. The real MAXX board has an i430TX, a
+PIIX4, an onboard ATI Rage IIC, a CS4236B and a Phoenix BIOS ("Apricot BIOS
+10.83", which survives only as a runtime dump); MegaPPBox uses the ASUS TX97
+(same chipset, Award BIOS) with an ATI 264VT3 card. The video chip matters: the
+Linux releases refuse to start ("Invalid motherboard detected") unless
+`/proc/pci` shows one of Merit's sets, for MAXX an 82439TX, a Rage IIC or a
+264VT3, and an 82371. The 264VT3's video BIOS is the one in the HP Pavilion
+81xx (ASUS TX97-XV) system BIOS, which has the same chip on board. The MAXX
+profiles can be moved to a spare ASUS P/I-P55TVP4 (i430VX) from the manager.
+
+All of them have the Merit I/O board (coin mech, Operator Setup and Calibrate
+buttons, security key; on XL also the CS4231A codec and the U12 ROM), a
+MicroTouch touch screen on COM1 and a PS/2 keyboard. XL disks appear as a
+`MEGATOUCH MERIT000` drive, which the XL games check.
+
+* **XL (CD Boot)** opens the I/O board's U12 ROM (SA3014-04 R00): its ROM-DOS
+  boots, loads the CD driver and runs `LAUNCHIT.BAT` from the disc (XL 6000,
+  XL Gold). **XL (CD Boot, early)** has the earlier U12 ROM (SA3014-03 R3) for
+  the XL R0-R3 and Super 5000 discs. Both boards carry 32 KB of battery RAM at
+  C8000 and a DS1205 MultiKey, and their BIOS has no hard disks set, so POST goes
+  straight to the ROM-DOS without looking for one.
+* **XL (HDD Boot)** is the Platinum / Titanium board: DS1991 iButton.
+* **MAXX**: DS1991 iButton, and COM2 left out (the Linux releases' modem probe
+  waits forever on a silent port). A Linux release rebooting itself resets the
+  whole board, as the reset line does; the TX97's own warm boot hangs there.
+  The releases write the cabinet's own board settings into the CMOS, so each
+  profile's settled CMOS is put back at every start (on XL too: the three XL
+  profiles share one board with different drive settings).
+
+Every drive runs flat out: hard disks without seek or rotation delays, the CD
+drive at Turbo, a floppy drive (if you fit one) with turbo timings.
+
+Security keys
+-------------
+
+The key dumps in the repository's `keys\` (listed in `keys\keys.txt`) are built
+into the executable and offered by release and territory, e.g. *MAXX Jade (USA) 1*
+or *XL 6000*; the Machine Manager picks the one that suits the image. *Other key
+file…* in the key menu (status bar) fits a dump of your own, and dumps in a
+`keys\` folder next to the executable are listed too. A 264-byte file is a DS1991
+in keyflasher's "full" format, `<family>_full_<ROM ID>`; a 192-byte file is a
+DS1205 MultiKey, `<family>_multikey_<part>` (MAME's `multikey` dumps). Two
+families need a word:
+
+* **MCROWN**: Crown V16 checks the key's serial range. The Canadian key
+  (`6D000000CB053702`, an early family-02 part) is outside it ("Key range
+  mismatch"); the USA-STD key (`FF004000036F1F82`) is in it.
+* **MRUBY2**: Ruby 2 (V11) derives its passwords like keyflasher's MRUBY family
+  but without the XOR on the password seeds. `MRUBY2_full_EC00400000E98382` is
+  the SA3061 dump re-keyed that way; the MRUBY dump's ROM ID is made up, so it
+  fails the range check.
+
+How images are identified
+-------------------------
+
+From the image's contents, never its file name:
+
+* **DOS disks** (XL Platinum … MAXX Emerald 2): the release string in
+  `MERIT2\EXEC\MEGACDLL.EXE`, e.g. `PG3004-01 V1.02`, `PG3002 V9.01`.
+* **Linux disks** (MAXX Ruby … Crown): the MD5 of `/usr/local/bin/start`, else
+  `/etc/version`, else the version in the game's own log.
+* **XL CDs**: `PG3001-00-01 R02` (XL 6000, Gold) or `R5B   (02/11/98)` (XL,
+  Super 5000) in the disc's `MEGACDLL.EXE`.
+
+MAXX releases are numbered in one series: V3 MAXX, V4 2000, V5 2000 Plus,
+V6 Diamond, V7 Double Diamond, V8 Emerald, V9 Emerald 2, V10 Ruby, V11 Ruby 2,
+V12 Sapphire, V13 Sapphire 2, V14 Jade, V15 Jade 2, V16 Crown. The DOS releases
+(to Emerald 2) default to MAXX (Old), the Linux ones to MAXX (New). The profile,
+board and key can be changed before pressing **Run**; the ones in use are kept
+in `MegaPPBox.cfg`.
+
+Restore and upgrade discs and anything unrecognised are hidden unless you tick
+*Show images that cannot run here*.
+
+`MegaPPBox.exe --identify <image>...` prints the same information, one line per
+image, without starting anything.
+
+Cabinet controls
+----------------
+
+The toolbar (and the *Tools* menu) carries the cabinet's own controls: Machine
+Manager, Coin 1–4, **Operator Setup** and **Calibrate**. The status bar shows the
+profile in use, the fitted key (click it to fit another or pull it) and the
+emulation speed. The touch screen is driven with the mouse. Help → Documentation
+opens [docs/](docs/).
+
+Status
+------
+
+Every image below was booted on MegaPPBox from a scratch copy with its default
+profile and key, to its game, attract mode or first-run touch calibration:
+
+* **XL CDs**: XL R1; Super 5000 R5B, R5E; XL 6000 R02, R04, R07; XL Gold R00
+  and R01.
+* **XL disks**: Platinum V1.02; Double Platinum V2.00; Titanium V3.00;
+  Titanium 2 V4.00.
+* **MAXX DOS**: MAXX V3.06; 2000 V4.00, V4.01; 2000 Plus V5.00; Diamond V6.03;
+  Double Diamond V7.01; Emerald V8.04; Emerald 2 V9.00, V9.01.
+* **MAXX Linux**: Ruby 2 V11.00, V11.05; Sapphire V12.01; Sapphire 2 V13.00;
+  Jade V14.00, V14.21; Jade 2 V15.10; Crown V16.00, V16.10. A new image restarts
+  once and then asks for touch calibration.
+
+Open:
+
+* **MAXX V3.02**: its key bit timing is erratic in emulation (write slots of
+  25-75 µs), so the key reads garbled; V3.06 of the same game is fine.
+* **Emerald V8.05**: the only known disk has an altered game executable whose
+  key check no genuine key can pass.
+* **Jade V14.00 (Played)**: the partition table describes a ~61 GB disk; the
+  image holds its first 4.36 GB and does not boot.
+* **Super 5000 R5I**: the disc lacks `IDLESMK\ENGLISH\TSOL.SMK`, which the game
+  opens ("ERROR in openfile"); R5B and R5E have it.
+
+Building
+--------
+
+MSYS2 MinGW64 with a static Qt 5, as for 86Box:
+
+```
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DSTATIC_BUILD=ON -DQT=ON -DUSE_QT6=OFF -DDYNAREC=ON -DNEW_DYNAREC=OFF
+cmake --build build
+```
+
+`scripts/make-build.ps1 -Name <what> [-Library <folder>]` then stages a runnable
+folder (exe, `roms\`). `tools/icons/mkicons.py` redraws the new toolbar
+icons.
+
+What was removed
+----------------
+
+About 900 machines down to three boards; video to three cards; sound to two cards
+and the codec; networking, SCSI, every non-IDE disk controller, ZIP/MO/tape,
+cassette and cartridge, printers, ISA memory/ROM/RTC cards, the proprietary CD
+interfaces, the MIDI synthesisers, the Voodoo, the VM manager and the Settings
+dialog. The commit log says what went and why, one area at a time.
