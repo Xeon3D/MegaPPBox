@@ -1,0 +1,293 @@
+# Build MegaPPBox for Windows, Linux and macOS, and publish the three archives as
+# a GitHub Release when the commit carries a v<x.y> tag (modelled on MegaPPBox's).
+#
+# The per-OS jobs mirror the three CMake (...) CI workflows, which build this tree
+# green -- same dependency lists, same configure flags -- but with preset `regular`
+# (Release), and with roms/ staged beside the binary so the download runs as-is.
+# The security keys are built into the executable.  macOS builds arm64 with
+# NEW_DYNAREC on, because the CI matrix excludes the old dynarec on arm64.
+#
+# Only a tagged commit is published:
+#
+#     git tag -a v1.03 -m "..." && git push origin main v1.03
+#
+# The release number shown to the user comes from MEGAPPBOX_VERSION in
+# CMakeLists.txt; the tag must match it.  The notes are docs/release-notes/<tag>.md,
+# verbatim.  Releases are cut only when the user says so, after approving the notes.
+
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - src/**
+      - cmake/**
+      - roms/**
+      - "**/CMakeLists.txt"
+      - CMakePresets.json
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+
+  # Read the release number off the tag once, so all three builds and the published
+  # release agree by construction.  A commit that carries no v<x.y> tag is not a named
+  # release: it reports the tag it descends from with a "+", never that tag's own number.
+  version:
+    name: Release number
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      release: ${{ steps.pick.outputs.release }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Pick
+        id: pick
+        run: |
+          set -euo pipefail
+          tag="$(git tag --points-at HEAD | grep -E '^v[0-9]' | sort -V | tail -1 || true)"
+          nearest="$(git describe --tags --abbrev=0 --match 'v[0-9]*' 2>/dev/null || true)"
+          if [ -n "$tag" ]; then
+            release="${tag#v}"
+          elif [ -n "$nearest" ]; then
+            release="${nearest#v}+"
+          else
+            release=""
+          fi
+          echo "tag=$tag"         >> "$GITHUB_OUTPUT"
+          echo "release=$release" >> "$GITHUB_OUTPUT"
+          echo "tag '$tag', release '$release'"
+
+  windows:
+    name: Windows (x64)
+    needs: version
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - name: Prepare MSYS2 environment
+        uses: msys2/setup-msys2@v2
+        with:
+          release: true
+          update: true
+          msystem: UCRT64
+          pacboy: >-
+            ninja:p
+            cmake:p
+            gcc:p
+            pkgconf:p
+            freetype:p
+            sdl3:p
+            zlib:p
+            libpng:p
+            openal:p
+            rtmidi:p
+            libslirp:p
+            fluidsynth:p
+            libserialport:p
+            qt5-static:p
+            vulkan-headers:p
+            llvm-openmp:p
+            zstd:p
+
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build --preset regular -D NEW_DYNAREC=off -D QT=on
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: cmake --install build
+
+      - name: Stage
+        run: |
+          mkdir -p dist/MegaPPBox
+          cp -r build/artifacts/* dist/MegaPPBox/
+          cp -r roms dist/MegaPPBox/
+          cp README.md dist/MegaPPBox/
+
+      - name: Archive
+        shell: pwsh
+        run: Compress-Archive -Path dist/MegaPPBox -DestinationPath MegaPPBox-windows-x64.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MegaPPBox-windows-x64
+          path: MegaPPBox-windows-x64.zip
+
+  linux:
+    name: Linux (x86_64)
+    needs: version
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Install dependencies
+        run: >-
+          sudo apt update && sudo apt install -y
+          build-essential
+          ninja-build
+          libfreetype-dev
+          libgles2-mesa-dev
+          libsdl3-dev
+          libpng-dev
+          libc6-dev
+          librtmidi-dev
+          libopenal-dev
+          libslirp-dev
+          libfluidsynth-dev
+          libvdeplug-dev
+          libserialport-dev
+          libzstd-dev
+          zip
+          qtbase5-dev
+          qtbase5-private-dev
+          qttools5-dev
+          qttranslations5-l10n
+          libevdev-dev
+          libxkbcommon-x11-dev
+
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build --preset regular
+          -D NEW_DYNAREC=off -D QT=on -D USE_QT6=off
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: cmake --install build
+
+      - name: Stage
+        run: |
+          mkdir -p dist/MegaPPBox
+          cp -r build/artifacts/* dist/MegaPPBox/
+          cp -r roms dist/MegaPPBox/
+          cp README.md dist/MegaPPBox/
+          cd dist && zip -r ../MegaPPBox-linux-x86_64.zip MegaPPBox
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MegaPPBox-linux-x86_64
+          path: MegaPPBox-linux-x86_64.zip
+
+  macos:
+    name: macOS (arm64)
+    needs: version
+    runs-on: macos-14
+    steps:
+      - name: Install dependencies
+        run: >-
+          brew install
+          sdl3
+          rtmidi
+          openal-soft
+          fluidsynth
+          libslirp
+          vde
+          libserialport
+          vulkan-headers
+          zstd
+          qt@5
+
+      - uses: actions/checkout@v7
+
+      - name: Configure
+        run: >-
+          cmake -S . -B build --preset regular
+          -D NEW_DYNAREC=on
+          -D QT=on
+          -D Qt5_ROOT=$(brew --prefix qt@5)
+          -D Qt5LinguistTools_ROOT=$(brew --prefix qt@5)
+          -D OpenAL_ROOT=$(brew --prefix openal-soft)
+          -D LIBSERIALPORT_ROOT=$(brew --prefix libserialport)
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Package
+        run: cmake --install build
+
+      - name: Stage
+        run: |
+          mkdir -p dist/MegaPPBox
+          cp -R build/artifacts/* dist/MegaPPBox/
+          cp -R roms dist/MegaPPBox/
+          cp README.md dist/MegaPPBox/
+          # -y so the .app bundle's symlinks survive the archive
+          cd dist && zip -ry ../MegaPPBox-macos-arm64.zip MegaPPBox
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MegaPPBox-macos-arm64
+          path: MegaPPBox-macos-arm64.zip
+
+  release:
+    name: Publish release
+    needs: [version, windows, linux, macos]
+    # Named versions only.  An untagged push has already done the useful part by
+    # building; its binaries are on the run page as artifacts.
+    if: needs.version.outputs.tag != ''
+    runs-on: ubuntu-latest
+    steps:
+      # gh resolves the repository from the checkout, and the tag has to exist here
+      # for the release to attach to it.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Collect artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: assets
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # The job only runs for a tagged commit, so this is always a named release.
+          # The number came from the version job, which is what the binaries were
+          # built with, so the release and the About box cannot disagree.
+          tag="${{ needs.version.outputs.tag }}"
+          title="Release ${tag#v}"
+          want="$(sed -n 's/^set(MEGAPPBOX_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
+          if [ "${tag#v}" != "$want" ]; then
+            echo "tag $tag does not match MEGAPPBOX_VERSION $want" >&2
+            exit 1
+          fi
+          headline="MegaPPBox $title — \`${GITHUB_SHA::7}\`"
+
+          # A release can carry its own notes: docs/release-notes/<tag>.md, verbatim
+          # and nothing else.  What a release says it changed is a thing to write by
+          # hand next to the change, not something a build script can work out -- and
+          # the boilerplate below says the same thing every time, which is worth
+          # having only when there is nothing better to say.
+          if [ -f "docs/release-notes/${tag}.md" ]; then
+            cp "docs/release-notes/${tag}.md" notes.md
+          else
+            {
+              echo "$headline"
+              echo
+              echo "Each archive contains the emulator and its ROMs. Run it, press"
+              echo "**Browse...** in the Machine Manager and choose your images folder."
+            } > notes.md
+          fi
+          gh release create "$tag" assets/*.zip \
+              --title "$title" \
+              --notes-file notes.md \
+              --latest
