@@ -50,8 +50,9 @@ the machine on a hard reset. The manager reads the folder afresh each time it
 opens.
 
 Two options are kept per image, both off by default: **Modem on COM2** (an
-ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; no telephone line
-behind it) and, on MAXX,
+ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; it can dial a TCP
+host, such as a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
+server, which brings the DOS releases' tournaments back) and, on MAXX,
 **Network card** (an RTL8139 behind SLiRP NAT, which the Linux releases drive
 with 8139too).
 

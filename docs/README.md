@@ -29,9 +29,10 @@ profile it will use. Before pressing **Run** you can change:
 - **Motherboard** (MAXX only): the ASUS TX97, or a spare i430VX board.
 - **Key**: the security key fitted to the Merit I/O board.
 - **Modem on COM2**: a 56K modem on COM2 (0x2F8, IRQ 3), as the MAXX
-  TournaMAXX/MegaNET kits fitted one. Off by default. There is no telephone
-  network behind it: it identifies itself and dials, and the call fails the
-  way it would on a dead line.
+  TournaMAXX/MegaNET kits fitted one. Off by default. *Tools > Modem
+  settings...* can make it dial a TCP host instead of a line, e.g. a
+  [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival) server
+  for the DOS releases' tournaments and updates.
 - **Network card** (MAXX only): an RTL8139 behind NAT, which the Linux
   releases (Ruby onward) can use. Off by default.
 
