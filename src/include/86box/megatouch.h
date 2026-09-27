@@ -90,7 +90,8 @@ extern int  megatouch_image_option(const char *image, const char *name);
 extern void megatouch_set_image_option(const char *image, const char *name, int val);
 
 /* Whether the modem's speaker is heard (dialling, training). */
-extern int megatouch_modem_sounds(void);
+extern int  megatouch_modem_sounds(void);
+extern void megatouch_set_modem_sounds(int on); /* heard at once; kept in the config */
 
 /* The folder of images the Machine Manager scans. */
 extern const char *megatouch_library(void);

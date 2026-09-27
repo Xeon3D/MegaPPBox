@@ -410,14 +410,21 @@ megatouch_set_image_option(const char *image, const char *name, int val)
         config_set_int(sec, (char *) name, !!val);
 }
 
+static volatile int mt_modem_sounds = -1;
+
 int
 megatouch_modem_sounds(void)
 {
-    static volatile int sounds = -1;
+    if (mt_modem_sounds < 0)
+        mt_modem_sounds = !!config_get_int(MT_SECTION, "modem_sounds", 1);
+    return mt_modem_sounds;
+}
 
-    if (sounds < 0)
-        sounds = !!config_get_int(MT_SECTION, "modem_sounds", 1);
-    return sounds;
+void
+megatouch_set_modem_sounds(int on)
+{
+    mt_modem_sounds = !!on;
+    config_set_int(MT_SECTION, "modem_sounds", !!on);
 }
 
 /* A board booted with no CMOS stops at "CMOS checksum error - press F1", a

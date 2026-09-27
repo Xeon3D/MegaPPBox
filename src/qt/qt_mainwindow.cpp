@@ -411,6 +411,17 @@ MainWindow::MainWindow(QWidget *parent)
             }
         });
         connect(netAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_NETWORK, on); });
+
+        /* The modem's speaker (dial tone, dialling, ringing, the handshake):
+           heard or not, at once; the call takes as long either way. */
+        ui->menuSound->addSeparator();
+        auto *modemSounds = ui->menuSound->addAction(tr("&Modem sounds"));
+        modemSounds->setCheckable(true);
+        modemSounds->setChecked(megatouch_modem_sounds());
+        connect(modemSounds, &QAction::toggled, this, [](bool on) {
+            megatouch_set_modem_sounds(on);
+            config_save();
+        });
         /* In the status bar: the toolbar overflows at 640x480. */
         statusBar()->insertPermanentWidget(0, keyButton);
 
