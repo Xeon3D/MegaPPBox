@@ -47,23 +47,29 @@
 #include <86box/megatouch.h>
 #include <86box/modem_sound.h>
 
+/* The AT commands, dials and results go to the log when the build enables it
+   or MEGAPPBOX_MODEM_LOG is set (non-empty) in the environment. */
 #ifdef ENABLE_CHAR_MODEM_LOG
 int char_modem_do_log = ENABLE_CHAR_MODEM_LOG;
+#else
+int char_modem_do_log = -1;
+#endif
 
 static void
 char_modem_log(void *priv, const char *fmt, ...)
 {
     va_list ap;
 
+    if (char_modem_do_log < 0) {
+        const char *e   = getenv("MEGAPPBOX_MODEM_LOG");
+        char_modem_do_log = (e != NULL) && (e[0] != '\0');
+    }
     if (char_modem_do_log) {
         va_start(ap, fmt);
         log_out(priv, fmt, ap);
         va_end(ap);
     }
 }
-#else
-#    define char_modem_log(priv, fmt, ...)
-#endif
 
 #define MODEM_OUT_SIZE 4096 /* modem -> DTE ring */
 #define MODEM_CMD_SIZE 256
