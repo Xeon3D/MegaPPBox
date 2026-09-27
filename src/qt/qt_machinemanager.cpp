@@ -93,6 +93,8 @@ MachineManager::MachineManager(QWidget *parent)
     board->addItem(tr("The profile's own (ASUS TX97, i430TX)"), MT_BOARD_DEFAULT);
     board->addItem(tr("ASUS P/I-P55TVP4 (i430VX)"), MT_BOARD_P55TVP4);
     key     = new QComboBox;
+    modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
+    networkBox = new QCheckBox(tr("Network card (RTL8139, NAT), MAXX Linux releases"));
     details = new QLabel;
     details->setWordWrap(true);
     details->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -101,6 +103,8 @@ MachineManager::MachineManager(QWidget *parent)
     form->addRow(tr("Hardware profile:"), profile);
     form->addRow(tr("Motherboard:"), board);
     form->addRow(tr("Key:"), key);
+    form->addRow(tr("Options:"), modemBox);
+    form->addRow(QString(), networkBox);
     form->addRow(details);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
@@ -132,6 +136,19 @@ MachineManager::MachineManager(QWidget *parent)
         if (Entry *e = current()) {
             e->userProfile = profile->currentData().toInt();
             board->setEnabled(MT_IS_MAXX(e->userProfile));
+            networkBox->setEnabled(MT_IS_MAXX(e->userProfile));
+        }
+    });
+    connect(modemBox, &QCheckBox::clicked, this, [this](bool on) {
+        if (Entry *e = current()) {
+            e->modem       = on;
+            e->optsChanged = true;
+        }
+    });
+    connect(networkBox, &QCheckBox::clicked, this, [this](bool on) {
+        if (Entry *e = current()) {
+            e->network     = on;
+            e->optsChanged = true;
         }
     });
     connect(board, QOverload<int>::of(&QComboBox::activated), this, [this]() {
@@ -311,8 +328,12 @@ MachineManager::selectionChanged()
     run->setEnabled(ok);
     profile->setEnabled(ok);
     key->setEnabled(ok);
+    modemBox->setEnabled(ok);
     if (!e) {
         board->setEnabled(false);
+        networkBox->setEnabled(false);
+        modemBox->setChecked(false);
+        networkBox->setChecked(false);
         details->clear();
         return;
     }
@@ -321,6 +342,13 @@ MachineManager::selectionChanged()
     profile->setCurrentIndex(qMax(0, profile->findData(p)));
     board->setCurrentIndex(qMax(0, board->findData(e->userBoard)));
     board->setEnabled(ok && MT_IS_MAXX(p));
+    if (e->modem < 0)
+        e->modem = megatouch_image_option(e->path.toUtf8().constData(), MT_OPT_MODEM);
+    if (e->network < 0)
+        e->network = megatouch_image_option(e->path.toUtf8().constData(), MT_OPT_NETWORK);
+    modemBox->setChecked(e->modem > 0);
+    networkBox->setChecked(e->network > 0);
+    networkBox->setEnabled(ok && MT_IS_MAXX(p));
     fillKeys(e->keySet ? e->userKey : mt_default_key(e->id));
 
     QStringList lines;
@@ -345,6 +373,15 @@ MachineManager::accept()
     chosenBoard   = MT_IS_MAXX(chosenProfile) ? board->currentData().toInt() : MT_BOARD_DEFAULT;
     chosenKey     = key->currentData().toString();
     chosenTitle   = e->id.version.isEmpty() ? e->id.release : QString("%1 %2").arg(e->id.release, e->id.version);
+
+    /* Options changed on any image are kept with that image. */
+    for (const Entry &x : entries) {
+        if (!x.optsChanged)
+            continue;
+        const QByteArray path = x.path.toUtf8();
+        megatouch_set_image_option(path.constData(), MT_OPT_MODEM, x.modem > 0);
+        megatouch_set_image_option(path.constData(), MT_OPT_NETWORK, x.network > 0);
+    }
     QDialog::accept();
 }
 

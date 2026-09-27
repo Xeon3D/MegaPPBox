@@ -76,6 +76,8 @@
 #include <86box/hdd_audio.h>
 #include <86box/hdc.h>
 #include <86box/hdc_ide.h>
+#include <86box/thread.h>
+#include <86box/network.h>
 #include <86box/scsi.h>
 #include <86box/scsi_device.h>
 #include <86box/cdrom.h>
@@ -1272,6 +1274,7 @@ usage:
          * modules before we load the config..
          */
         hdd_init();
+        network_init();
         mouse_init();
         cdrom_global_init();
 
@@ -1726,6 +1729,9 @@ pc_reset_hard_init(void)
     serial_standalone_init();
     serial_devices_init();
 
+    /* Reset and reconfigure the Network Card layer. */
+    network_reset();
+
 
     /*
      * Reset the mouse, this will attach it to any port needed.
@@ -1879,6 +1885,8 @@ pc_close(UNUSED(thread_t *ptr))
     midi_out_close();
 
     midi_in_close();
+
+    network_close();
 
     sound_cd_thread_end();
 

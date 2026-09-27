@@ -39,6 +39,8 @@ extern "C" {
 #include <86box/86box.h>
 #include <86box/merit_io.h>
 #include <86box/megatouch.h>
+#include <86box/device.h>
+#include <86box/char.h>
 #include <86box/config.h>
 #include <86box/keyboard.h>
 #include <86box/plat.h>
@@ -82,6 +84,7 @@ extern bool fast_forward;
 #include <QKeyEvent>
 #include <QShortcut>
 #include <QMessageBox>
+#include "qt_deviceconfig.hpp"
 #include <QFocusEvent>
 #include <QApplication>
 #include <QPushButton>
@@ -359,6 +362,55 @@ MainWindow::MainWindow(QWidget *parent)
         keyButton->setAutoRaise(true);
         ui->menuTools->insertMenu(cabinetEnd, keyMenu);
         ui->menuTools->insertSeparator(cabinetEnd);
+
+        /* The image's own options (megatouch_image_option): new hardware, so a
+           change is kept with the image and built on a hard reset. */
+        auto *modemAct = new QAction(tr("&Modem on COM2"), this);
+        auto *netAct   = new QAction(tr("&Network card (RTL8139)"), this);
+        modemAct->setCheckable(true);
+        netAct->setCheckable(true);
+        auto *modemCfg = new QAction(tr("Modem &settings..."), this);
+        ui->menuTools->insertAction(cabinetEnd, modemAct);
+        ui->menuTools->insertAction(cabinetEnd, modemCfg);
+        ui->menuTools->insertAction(cabinetEnd, netAct);
+        ui->menuTools->insertSeparator(cabinetEnd);
+        connect(ui->menuTools, &QMenu::aboutToShow, this, [modemAct, netAct]() {
+            const char *img  = megatouch_image();
+            const bool  has  = img && img[0];
+            const bool  maxx = MT_IS_MAXX(megatouch_profile());
+            modemAct->setEnabled(has);
+            netAct->setEnabled(has && maxx);
+            modemAct->setChecked(has && megatouch_image_option(img, MT_OPT_MODEM));
+            netAct->setChecked(has && maxx && megatouch_image_option(img, MT_OPT_NETWORK));
+        });
+        auto setOption = [this](const char *opt, bool on) {
+            megatouch_set_image_option(megatouch_image(), opt, on);
+            config_save();
+            if (QMessageBox::question(this, EMU_NAME,
+                                      tr("The change takes effect at the next hard reset. Reset now?"))
+                == QMessageBox::Yes) {
+                config_changed = 2;
+                pc_reset_hard();
+            }
+        };
+        connect(modemAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_MODEM, on); });
+        /* The line behind the modem: dead, or a TCP host (name or address) and
+           port that a dial connects to.  Same settings for every image; the
+           device is on COM2, so it is instance 2. */
+        connect(modemCfg, &QAction::triggered, this, [this]() {
+            if (!DeviceConfig::ConfigureDevice(&char_modem_megatouch_com_device, 2, this))
+                return;
+            config_save();
+            const char *img = megatouch_image();
+            if (img && img[0] && megatouch_image_option(img, MT_OPT_MODEM) &&
+                (QMessageBox::question(this, EMU_NAME,
+                                       tr("The change takes effect at the next hard reset. Reset now?"))
+                 == QMessageBox::Yes)) {
+                config_changed = 2;
+                pc_reset_hard();
+            }
+        });
+        connect(netAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_NETWORK, on); });
         /* In the status bar: the toolbar overflows at 640x480. */
         statusBar()->insertPermanentWidget(0, keyButton);
 

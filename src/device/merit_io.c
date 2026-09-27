@@ -173,6 +173,7 @@ typedef struct merit_io_t {
 /* ---- cabinet controls ------------------------------------------------- */
 
 extern const device_t merit_io_device;
+extern const device_t merit_pcic_device;
 
 static merit_io_t      *mio_inst;
 static volatile uint32_t line_until[MERIT_LINES]; /* host ms; 0 = released */
@@ -1301,6 +1302,10 @@ merit_io_init(UNUSED(const device_t *info))
         sound_add_handler(mio_get_buffer, dev);
         ad1848_speed_changed(&dev->codec);
     }
+
+    /* The MAXX cards carry the PC Card slots (merit_pcic.c). */
+    if (dev->drive_mask == 0x20)
+        device_add(&merit_pcic_device);
     return dev;
 }
 

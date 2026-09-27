@@ -28,6 +28,15 @@ profile it will use. Before pressing **Run** you can change:
   MAXX (Old), MAXX (New). The defaults are the right ones; see below.
 - **Motherboard** (MAXX only): the ASUS TX97, or a spare i430VX board.
 - **Key**: the security key fitted to the Merit I/O board.
+- **Modem on COM2**: a 56K modem on COM2 (0x2F8, IRQ 3), as the MAXX
+  TournaMAXX/MegaNET kits fitted one. Off by default. There is no telephone
+  network behind it: it identifies itself and dials, and the call fails the
+  way it would on a dead line.
+- **Network card** (MAXX only): an RTL8139 behind NAT, which the Linux
+  releases (Ruby onward) can use. Off by default.
+
+Both options are kept with each image, in `MegaPPBox.cfg`, and take effect
+when the image starts.
 
 *Show images that cannot run here* also lists restore discs and unrecognised
 files, with the reason each one is not offered.
@@ -69,11 +78,14 @@ change.
 The key is in the *Tools* menu too. The touch screen is the mouse. A new Linux MAXX image restarts once on its first
 boot (and after a hardware change), then asks for touch calibration.
 
+The MAXX I/O board's PC Card slots are there (a Cirrus PD6722, both slots
+empty), so the Linux releases start their PC Card services without errors.
+
 ## Files in a cabinet folder
 
 | File | What |
 |---|---|
-| `MegaPPBox.cfg` | every setting: the images folder, the image, profile, board and key in use, window and emulator preferences |
+| `MegaPPBox.cfg` | every setting: the images folder, the image, profile, board and key in use, each image's modem and network options, window and emulator preferences |
 | `nvr\` | the boards' CMOS and flash, the touch calibration |
 | `keys\` | optional: your own key dumps |
 

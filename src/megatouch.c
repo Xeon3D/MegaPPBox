@@ -36,6 +36,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <wchar.h>
 #define HAVE_STDARG_H
 #include <86box/86box.h>
@@ -57,6 +58,9 @@
 #include <86box/keyboard.h>
 #include <86box/gameport.h>
 #include <86box/serial.h>
+#include <86box/char.h>
+#include <86box/thread.h>
+#include <86box/network.h>
 #include <86box/hdd.h>
 #include <86box/scsi_device.h>
 #include <86box/cdrom.h>
@@ -358,6 +362,64 @@ megatouch_save_config(void)
 #undef MT_SAVE_STR
 }
 
+/* Per-image options.  An image path can be longer than an ini key, so each
+   image gets a section of its own: [MegaPPBox image N] with path = and the
+   options.  Sections are numbered from 1 with no gaps. */
+#define MT_IMAGE_SECTION "MegaPPBox image %d"
+#define MT_IMAGE_MAX     1024
+
+static int
+mt_image_section(const char *image, int create, char *sec, size_t len)
+{
+    if (!image || !image[0])
+        return 0;
+
+    for (int n = 1; n <= MT_IMAGE_MAX; n++) {
+        snprintf(sec, len, MT_IMAGE_SECTION, n);
+        const char *p = config_get_string(sec, "path", NULL);
+        if (!p) {
+            if (!create)
+                return 0;
+            config_set_string(sec, "path", (char *) image);
+            return 1;
+        }
+        if (!strcasecmp(p, image))
+            return 1;
+    }
+    return 0;
+}
+
+int
+megatouch_image_option(const char *image, const char *name)
+{
+    char sec[64];
+
+    if (!mt_image_section(image, 0, sec, sizeof(sec)))
+        return 0;
+    return !!config_get_int(sec, (char *) name, 0);
+}
+
+void
+megatouch_set_image_option(const char *image, const char *name, int val)
+{
+    char sec[64];
+
+    if (!val && !megatouch_image_option(image, name))
+        return; /* off is the default: no section just to say so */
+    if (mt_image_section(image, 1, sec, sizeof(sec)))
+        config_set_int(sec, (char *) name, !!val);
+}
+
+int
+megatouch_modem_sounds(void)
+{
+    static volatile int sounds = -1;
+
+    if (sounds < 0)
+        sounds = !!config_get_int(MT_SECTION, "modem_sounds", 1);
+    return sounds;
+}
+
 /* A board booted with no CMOS stops at "CMOS checksum error - press F1", a
    fresh MicroTouch controller is uncalibrated, and a fresh CS4236B has not been
    through CWDINIT's PnP setup.  The ROM set carries settled
@@ -484,12 +546,33 @@ mt_apply_input(void)
     for (int i = 0; i < GAMEPORT_MAX; i++)
         joystick_type[i] = 0;
 
-    /* COM1 is the touch screen.  MAXX has nothing on COM2, and the Linux
-       releases' modem probe (modemdetectforce on /dev/modem = ttyS1) waits
-       forever on a port that is there but silent; absent, it gives up. */
+    /* COM1 is the touch screen.  COM2 is the modem when the image has one
+       fitted.  Otherwise MAXX has nothing there: the Linux releases' modem
+       probe (on /dev/modem = ttyS1) waits forever on a port that is there but
+       silent; absent, it gives up. */
+    const int modem = megatouch_image_option(mt_image, MT_OPT_MODEM);
     for (int i = 0; i < SERIAL_MAX; i++) {
-        com_ports[i].enabled = (i < (MT_IS_MAXX(mt_profile) ? 1 : 2));
+        com_ports[i].enabled = (i < ((MT_IS_MAXX(mt_profile) && !modem) ? 1 : 2));
         com_ports[i].device  = 0;
+    }
+    if (modem) {
+        com_ports[1].device = char_get_from_internal_name("modem_fm560lk", DEVICE_COM);
+        if (!com_ports[1].device)
+            fatal("MegaPPBox: the modem is missing from this build\n");
+    }
+}
+
+/* The network card, when the image has one fitted: an RTL8139 on SLiRP.  The
+   Linux MAXX releases drive it with 8139too and ask DHCP for an address. */
+static void
+mt_apply_network(void)
+{
+    memset(net_cards_conf, 0, sizeof(net_cards_conf));
+    if (MT_IS_MAXX(mt_profile) && megatouch_image_option(mt_image, MT_OPT_NETWORK)) {
+        net_cards_conf[0].device_num = network_card_get_from_internal_name((char *) "rtl8139c+");
+        net_cards_conf[0].net_type   = NET_TYPE_SLIRP;
+        if (!net_cards_conf[0].device_num)
+            fatal("MegaPPBox: the RTL8139 is missing from this build\n");
     }
 }
 
@@ -582,6 +665,7 @@ megatouch_apply_profile(void)
     mt_apply_machine(p);
     mt_apply_video_sound(p);
     mt_apply_input();
+    mt_apply_network();
     mt_apply_merit_board(p);
     mt_apply_media(p);
 

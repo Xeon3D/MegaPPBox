@@ -136,6 +136,7 @@ target_link_libraries(86Box
     game
     cdrom
     hdd
+    net
     scsi
     sio
     snd
@@ -299,6 +300,7 @@ endif()
 add_subdirectory(device)
 add_subdirectory(disk)
 add_subdirectory(floppy)
+add_subdirectory(network)
 add_subdirectory(game)
 add_subdirectory(machine)
 add_subdirectory(mem)

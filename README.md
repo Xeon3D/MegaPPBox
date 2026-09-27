@@ -49,6 +49,12 @@ again from the toolbar (or *Tools → Machine Manager…*) to switch, which rebu
 the machine on a hard reset. The manager reads the folder afresh each time it
 opens.
 
+Two options are kept per image, both off by default: **Modem on COM2** (an
+ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; no telephone line
+behind it) and, on MAXX,
+**Network card** (an RTL8139 behind SLiRP NAT, which the Linux releases drive
+with 8139too).
+
 Everything the folder needs lives inside it — all settings in `MegaPPBox.cfg`
 (including the images folder and the image in use), the CMOS in `nvr\` —
 whatever the working directory, so two folders are two independent cabinets.
@@ -92,8 +98,11 @@ MicroTouch touch screen on COM1 and a PS/2 keyboard. XL disks appear as a
   C8000 and a DS1205 MultiKey, and their BIOS has no hard disks set, so POST goes
   straight to the ROM-DOS without looking for one.
 * **XL (HDD Boot)** is the Platinum / Titanium board: DS1991 iButton.
-* **MAXX**: DS1991 iButton, and COM2 left out (the Linux releases' modem probe
-  waits forever on a silent port). A Linux release rebooting itself resets the
+* **MAXX**: DS1991 iButton, and the I/O board's PC Card slots (a Cirrus
+  PD6722 at 0x3E0, both empty), which the Linux releases' PC Card services and
+  MAXX 1st's CardSoft look for. COM2 is left out unless the image has the
+  modem fitted (the Linux releases' modem probe waits forever on a silent
+  port). A Linux release rebooting itself resets the
   whole board, as the reset line does; the TX97's own warm boot hangs there.
   The releases write the cabinet's own board settings into the CMOS, so each
   profile's settled CMOS is put back at every start (on XL too: the three XL
@@ -201,7 +210,8 @@ What was removed
 ----------------
 
 About 900 machines down to three boards; video to three cards; sound to two cards
-and the codec; networking, SCSI, every non-IDE disk controller, ZIP/MO/tape,
+and the codec; networking down to one card (an RTL8139 on SLiRP, per image,
+for the Linux MAXX releases), SCSI, every non-IDE disk controller, ZIP/MO/tape,
 cassette and cartridge, printers, ISA memory/ROM/RTC cards, the proprietary CD
 interfaces, the MIDI synthesisers, the Voodoo, the VM manager and the Settings
 dialog. The commit log says what went and why, one area at a time.

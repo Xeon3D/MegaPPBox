@@ -50,6 +50,10 @@ public:
         int     userBoard   = 0;
         QString userKey;
         bool    keySet = false; /* userKey is a choice, even if empty (no key) */
+        /* Per-image options (megatouch_image_option): -1 until read. */
+        int     modem   = -1;
+        int     network = -1;
+        bool    optsChanged = false;
     };
 
 private slots:
@@ -70,6 +74,8 @@ private:
     QComboBox   *profile;
     QComboBox   *board;
     QComboBox   *key;
+    QCheckBox   *modemBox;
+    QCheckBox   *networkBox;
     QLabel      *details;
     QLabel      *status;
     QPushButton *run;

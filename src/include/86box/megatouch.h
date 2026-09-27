@@ -79,6 +79,19 @@ extern void megatouch_save_config(void);
    of config_load() and again before every hard reset. */
 extern void megatouch_apply_profile(void);
 
+/* Per-image options, kept with the image's path in the config file's
+   [MegaPPBox image N] sections, so each image keeps its own.  Both are off by
+   default:
+     modem    the ActionTec modem on COM2 (0x2F8, IRQ 3), any profile
+     network  an RTL8139 on SLiRP NAT, MAXX only (the Linux releases' 8139too) */
+#define MT_OPT_MODEM   "modem"
+#define MT_OPT_NETWORK "network"
+extern int  megatouch_image_option(const char *image, const char *name);
+extern void megatouch_set_image_option(const char *image, const char *name, int val);
+
+/* Whether the modem's speaker is heard (dialling, training). */
+extern int megatouch_modem_sounds(void);
+
 /* The folder of images the Machine Manager scans. */
 extern const char *megatouch_library(void);
 extern void        megatouch_set_library(const char *dir);
