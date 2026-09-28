@@ -99,10 +99,49 @@ typedef struct net_switch_t {
     netpkt_t       pkt_tx_v[SWITCH_PKT_BATCH];
     int            during_tx;
     int            recv_on_tx;
+    /* MegaPPBox: recently received frames, to drop the extra copies (see
+       net_switch_is_copy) */
+    struct {
+        uint64_t hash;
+        uint32_t len;
+        uint32_t ms;
+    }              seen[16];
+    int            seen_next;
 #ifdef _WIN32
     HANDLE         sock_event;
 #endif
 } net_switch_t;
+
+/* MegaPPBox: the local switch sends each frame out through every host
+   interface, so a cabinet on another PC hears it whichever network that PC
+   is on -- and every cabinet listening receives it once per interface (seven
+   times on a PC with Hyper-V, WSL and VirtualBox adapters).  The copies come
+   within microseconds of each other; a frame identical to one received less
+   than SWITCH_COPY_MS ago is dropped.  A real repeat that close would be lost
+   like any dropped frame, which the games' protocols already live with.  The
+   wire format is unchanged. */
+#define SWITCH_COPY_MS 10
+
+static int
+net_switch_is_copy(net_switch_t *netswitch, const uint8_t *data, uint32_t len)
+{
+    uint64_t hash = 0xcbf29ce484222325ULL; /* FNV-1a */
+    uint32_t now  = plat_get_ticks();
+
+    for (uint32_t i = 0; i < len; i++)
+        hash = (hash ^ data[i]) * 0x100000001b3ULL;
+
+    for (int i = 0; i < (int) (sizeof(netswitch->seen) / sizeof(netswitch->seen[0])); i++)
+        if ((netswitch->seen[i].hash == hash) && (netswitch->seen[i].len == len) &&
+            ((uint32_t) (now - netswitch->seen[i].ms) < SWITCH_COPY_MS))
+            return 1;
+
+    netswitch->seen[netswitch->seen_next].hash = hash;
+    netswitch->seen[netswitch->seen_next].len  = len;
+    netswitch->seen[netswitch->seen_next].ms   = now;
+    netswitch->seen_next = (netswitch->seen_next + 1) % (int) (sizeof(netswitch->seen) / sizeof(netswitch->seen[0]));
+    return 0;
+}
 
 #ifdef ENABLE_SWITCH_LOG
 int switch_do_log = ENABLE_SWITCH_LOG;
@@ -535,7 +574,9 @@ net_switch_thread(void *priv)
                 }
             }
 
-            if ((AS_U64(netswitch->pkt.data[6]) & le64_to_cpu(0xffffffffffffULL)) == netswitch->mac_addr_u64) {
+            if (!netswitch->remote && net_switch_is_copy(netswitch, netswitch->pkt.data, (uint32_t) len)) {
+                /* The same frame through another host interface: drop it. */
+            } else if ((AS_U64(netswitch->pkt.data[6]) & le64_to_cpu(0xffffffffffffULL)) == netswitch->mac_addr_u64) {
                 /* A packet we've sent has looped back, drop it. */
             } else if (!(net_cards_conf[netswitch->card->card_num].link_state & NET_LINK_DOWN) && (netswitch->promisc || /* promiscuous mode? */
                        (netswitch->pkt.data[0] & 1) || /* broadcast packet? */
