@@ -53,9 +53,10 @@ Two options are kept per image, both off by default: **Modem on COM2** (an
 ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; it can dial a TCP
 host, such as a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
 server, which brings the DOS releases' tournaments back) and, on MAXX,
-**Network card** behind SLiRP NAT: on MAXX (Old) a TRENDnet TE100-PC16 in the
-I/O board's PC Card slot (an AX88190, NE2000 class; TRENDnet's LANEN enabler
-and LE100 packet/NDIS/ODI drivers run on it), on MAXX (New) an RTL8139, which
+**Network card** behind SLiRP NAT: on MAXX (Old) an ISA TRENDnet TE-16PT
+(RTL8019AS) at 0x340, IRQ 10, the card Emerald's `STARTTCP.BAT` finds and
+loads its ODI driver for (on the original MAXX's Mitsubishi "Apricot" board,
+whose identity the emulated BIOS then carries); on MAXX (New) an RTL8139, which
 the Linux releases drive with 8139too.
 
 Everything the folder needs lives inside it — all settings in `MegaPPBox.cfg`
@@ -214,7 +215,7 @@ What was removed
 
 About 900 machines down to three boards; video to three cards; sound to two cards
 and the codec; networking down to two cards on SLiRP, per image (an RTL8139
-for the Linux MAXX releases, a TE100-PC16 PC Card for the DOS ones), SCSI, every non-IDE disk controller, ZIP/MO/tape,
+for the Linux MAXX releases, a TE-16PT ISA card for the DOS ones), SCSI, every non-IDE disk controller, ZIP/MO/tape,
 cassette and cartridge, printers, ISA memory/ROM/RTC cards, the proprietary CD
 interfaces, the MIDI synthesisers, the Voodoo, the VM manager and the Settings
 dialog. The commit log says what went and why, one area at a time.

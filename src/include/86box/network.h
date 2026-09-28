@@ -255,8 +255,8 @@ extern const device_t plip_device;
 /* Realtek RTL8139C+ */
 extern const device_t rtl8139c_plus_device;
 
-/* TRENDnet TE100-PC16 (PC Card, AX88190) */
-extern const device_t te100pc16_device;
+/* TRENDnet TE-16PT (RTL8019AS, ISA, jumperless at 0x340) */
+extern const device_t te16pt_device;
 
 /* Intel 8255x */
 extern const device_t i82557_device;

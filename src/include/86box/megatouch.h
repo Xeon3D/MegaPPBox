@@ -83,11 +83,17 @@ extern void megatouch_apply_profile(void);
    [MegaPPBox image N] sections, so each image keeps its own.  Both are off by
    default:
      modem    the ActionTec modem on COM2 (0x2F8, IRQ 3), any profile
-     network  an RTL8139 on SLiRP NAT, MAXX only (the Linux releases' 8139too) */
+     network  on SLiRP NAT, MAXX only: an RTL8139 on MAXX (New) (the Linux
+              releases' 8139too), a TRENDnet TE-16PT at 0x340 on MAXX (Old) */
 #define MT_OPT_MODEM   "modem"
 #define MT_OPT_NETWORK "network"
 extern int  megatouch_image_option(const char *image, const char *name);
 extern void megatouch_set_image_option(const char *image, const char *name, int val);
+
+/* The Merit I/O board calls this on every access: with the TE-16 fitted on
+   MAXX (Old), the BIOS segment carries the Mitsubishi board's "Apricot"
+   identity, which Emerald's WBOARD.EXE looks for. */
+extern void megatouch_board_ident(void);
 
 /* Whether the modem's speaker is heard (dialling, training). */
 extern int  megatouch_modem_sounds(void);

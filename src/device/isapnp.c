@@ -594,8 +594,12 @@ isapnp_write_common(isapnp_t *dev, isapnp_card_t *card, isapnp_device_t *ld, uin
                             }
                         }
                     }
-                } else
+                } else if (card->state != PNP_STATE_WAIT_FOR_KEY) {
+                    /* Only cards that saw the key take part.  A card left
+                       waiting for it -- the RTL8019AS in jumperless mode --
+                       must not be pulled into the next isolation. */
                     card->state = PNP_STATE_SLEEP;
+                }
 
                 card = card->next;
             }

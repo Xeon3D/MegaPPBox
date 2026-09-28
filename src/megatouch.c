@@ -571,21 +571,80 @@ mt_apply_input(void)
 
 /* The network card, when the image has one fitted, on SLiRP.  The Linux MAXX
    releases get an RTL8139, which they drive with 8139too and ask DHCP for an
-   address.  The DOS releases get a TRENDnet TE100-PC16 in socket A of the I/O
-   board's PC Card slots: an NE2000-class card (AX88190) that a DOS packet or
-   ODI driver can use once CardSoft or the card's enabler has configured it.
-   (The Linux kernels carry no axnet_cs, so it would do nothing for them.) */
+   address.  The DOS releases get an ISA TRENDnet TE-16PT (RTL8019AS),
+   jumperless at 0x340: Emerald's C:\ETHERNET\STARTTCP.BAT runs "wtrend 340",
+   which names it the "new" TE-16PT, and loads PNPODI, the RTL8019 ODI driver. */
+static int      mt_apricot;    /* 1 = wanted, 2 = in place at mt_apricot_at, -1 = no room */
+static uint32_t mt_apricot_at;
+
 static void
 mt_apply_network(void)
 {
     memset(net_cards_conf, 0, sizeof(net_cards_conf));
+    mt_apricot = 0;
     if (MT_IS_MAXX(mt_profile) && megatouch_image_option(mt_image, MT_OPT_NETWORK)) {
-        const char *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te100pc16" : "rtl8139c+";
+        const char *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16pt" : "rtl8139c+";
+
+        mt_apricot = (mt_profile == MT_PROFILE_MAXX_OLD);
 
         net_cards_conf[0].device_num = network_card_get_from_internal_name((char *) card);
         net_cards_conf[0].net_type   = NET_TYPE_SLIRP;
         if (!net_cards_conf[0].device_num)
             fatal("MegaPPBox: the network card (%s) is missing from this build\n", card);
+    }
+}
+
+/* Which cabinet board Emerald's C:\MTOOLS\CMOS\WBOARD.EXE sees.  It looks for
+   an RTL8139 on the PCI bus, then for strings in the BIOS segment (F000:0000
+   to FEFF, from TEST.DAT): "4.51G", "4.04", "-NOUSB", "Apricot" (types 1-4)
+   and "REV: MERIT" (5, Unicorn).  STARTTCP.BAT runs "wtrend 340" and the
+   TE-16 drivers for types 1-4, and the RTL8139 ODI driver for everything
+   else, "not found" (255) included.  The original MAXX's Mitsubishi board
+   says "@(#)Apricot BIOS Version 10.83" (MAXXBIOS.BIO); the ASUS TX97 BIOS
+   MAXX (Old) runs says none of them.  So with the TE-16 fitted, the Apricot
+   identity is written into a blank stretch of the shadowed F000 segment --
+   after POST, at the first access to the Merit I/O board, and again should
+   a reset have copied the BIOS back over it. */
+static const char mt_apricot_id[] = "@(#)Apricot BIOS";
+
+void
+megatouch_board_ident(void)
+{
+    const uint32_t len  = sizeof(mt_apricot_id) - 1;
+    uint32_t       run  = 0;
+    uint32_t       best = 0;
+    uint8_t        prev = 0x55;
+
+    if (mt_apricot <= 0)
+        return;
+    if ((mt_apricot == 2) && !memcmp(&ram[mt_apricot_at], mt_apricot_id, len))
+        return;
+
+    /* The middle of the longest stretch of padding (0x00 or 0xFF, at least
+       256 bytes; the TX97's longest is 2489 bytes at F000:7647). */
+    mt_apricot_at = 0;
+    for (uint32_t a = 0xf0000; a < 0xfff00; a++) {
+        const uint8_t b = mem_readb_phys(a);
+
+        run  = ((b == prev) && ((b == 0x00) || (b == 0xff))) ? (run + 1) : 1;
+        prev = b;
+        if ((run >= 256) && (run > best)) {
+            best          = run;
+            mt_apricot_at = (a - (run / 2)) & ~0x0f;
+        }
+    }
+    if (mt_apricot_at) {
+        memcpy(&ram[mt_apricot_at], mt_apricot_id, len);
+        for (uint32_t i = 0; i < len; i++)
+            if (mem_readb_phys(mt_apricot_at + i) != (uint8_t) mt_apricot_id[i])
+                mt_apricot_at = 0;
+    }
+    if (mt_apricot_at) {
+        mt_apricot = 2;
+        pclog("MegaPPBox: BIOS segment says \"%s\" at %05X (the Mitsubishi board)\n", mt_apricot_id, mt_apricot_at);
+    } else {
+        mt_apricot = -1;
+        pclog("MegaPPBox: no room in the BIOS segment for the Apricot identity\n");
     }
 }
 

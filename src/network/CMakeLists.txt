@@ -12,7 +12,7 @@ add_library(net OBJECT
     net_null.c
     net_rtl8139.c
     net_dp8390.c
-    net_te100pc16.c
+    net_ne2000.c
 )
 
 find_package(PkgConfig REQUIRED)

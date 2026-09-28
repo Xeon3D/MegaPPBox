@@ -55,6 +55,7 @@
 #include <86box/plat.h>
 #include <86box/plat_unused.h>
 #include <86box/merit_io.h>
+#include <86box/megatouch.h>
 #include <86box/megatouch_keys.h>
 #include <86box/snd_speaker.h>
 #include <86box/path.h>
@@ -1144,6 +1145,8 @@ mio_read(uint16_t port, void *priv)
     merit_io_t *dev = (merit_io_t *) priv;
     uint8_t     ret = 0xff;
 
+    megatouch_board_ident();
+
     /* An 8-bit ISA cycle, about 1 us. The Linux MAXX games time the key's
        1-Wire slots by counting reads of 0x22D (a reset is 600 of them), so
        without the bus cost the reset is too short for the part to see. */
@@ -1187,6 +1190,7 @@ mio_write(uint16_t port, uint8_t val, void *priv)
     merit_io_t *dev = (merit_io_t *) priv;
 
     cycles -= ISA_CYCLES(8);
+    megatouch_board_ident();
 
     if (merit_trace_enabled)
         merit_trace_note('W', port, val);
