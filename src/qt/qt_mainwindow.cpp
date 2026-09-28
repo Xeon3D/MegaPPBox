@@ -367,7 +367,7 @@ MainWindow::MainWindow(QWidget *parent)
         /* The image's own options (megatouch_image_option): new hardware, so a
            change is kept with the image and built on a hard reset. */
         auto *modemAct = new QAction(tr("&Modem on COM2"), this);
-        auto *netAct   = new QAction(tr("&Network card (RTL8139)"), this);
+        auto *netAct   = new QAction(tr("&Network card"), this);
         modemAct->setCheckable(true);
         netAct->setCheckable(true);
         auto *modemCfg = new QAction(tr("Modem &settings..."), this);

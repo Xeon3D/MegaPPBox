@@ -33,8 +33,11 @@ profile it will use. Before pressing **Run** you can change:
   settings...* can make it dial a TCP host instead of a line, e.g. a
   [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival) server
   for the DOS releases' tournaments and updates.
-- **Network card** (MAXX only): an RTL8139 behind NAT, which the Linux
-  releases (Ruby onward) can use. Off by default.
+- **Network card** (MAXX only), behind NAT. Off by default.
+  - On MAXX (Old): a TRENDnet TE100-PC16 in socket A of the I/O board's PC Card
+    slots. The DOS releases ship no driver for it; TRENDnet's own work, e.g.
+    `LANEN.EXE` (with or without CardSoft) and then `LE100PD.COM 0x62 <irq> <port>`.
+  - On MAXX (New): an RTL8139, which the Linux releases (Ruby onward) can use.
 
 Both options are kept with each image, in `MegaPPBox.cfg`, and take effect
 when the image starts.

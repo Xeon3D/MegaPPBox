@@ -11,6 +11,8 @@ add_library(net OBJECT
     net_event.c
     net_null.c
     net_rtl8139.c
+    net_dp8390.c
+    net_te100pc16.c
 )
 
 find_package(PkgConfig REQUIRED)

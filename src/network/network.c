@@ -79,14 +79,16 @@ typedef struct net_card_migrate_t {
     const char     *old_internal_name;
 } net_card_migrate_t;
 
-/* MegaPPBox keeps one card: the RTL8139 the Linux MAXX releases can drive
-   (8139too), on SLiRP.  No Megatouch cabinet had it built in; it stands in for
-   the broadband adapter an operator could fit. */
+/* MegaPPBox keeps two cards, on SLiRP: the RTL8139 the Linux MAXX releases
+   can drive (8139too) -- no Megatouch cabinet had it built in; it stands in
+   for the broadband adapter an operator could fit -- and for the DOS MAXX
+   releases the TRENDnet TE100-PC16, a PC Card in the I/O board's slot. */
 static const NETWORK_CARD net_cards[] = {
     // clang-format off
     { &device_none                },
     { &device_internal            },
     { &rtl8139c_plus_device       },
+    { &te100pc16_device           },
     { NULL                        }
     // clang-format on
 };

@@ -569,17 +569,23 @@ mt_apply_input(void)
     }
 }
 
-/* The network card, when the image has one fitted: an RTL8139 on SLiRP.  The
-   Linux MAXX releases drive it with 8139too and ask DHCP for an address. */
+/* The network card, when the image has one fitted, on SLiRP.  The Linux MAXX
+   releases get an RTL8139, which they drive with 8139too and ask DHCP for an
+   address.  The DOS releases get a TRENDnet TE100-PC16 in socket A of the I/O
+   board's PC Card slots: an NE2000-class card (AX88190) that a DOS packet or
+   ODI driver can use once CardSoft or the card's enabler has configured it.
+   (The Linux kernels carry no axnet_cs, so it would do nothing for them.) */
 static void
 mt_apply_network(void)
 {
     memset(net_cards_conf, 0, sizeof(net_cards_conf));
     if (MT_IS_MAXX(mt_profile) && megatouch_image_option(mt_image, MT_OPT_NETWORK)) {
-        net_cards_conf[0].device_num = network_card_get_from_internal_name((char *) "rtl8139c+");
+        const char *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te100pc16" : "rtl8139c+";
+
+        net_cards_conf[0].device_num = network_card_get_from_internal_name((char *) card);
         net_cards_conf[0].net_type   = NET_TYPE_SLIRP;
         if (!net_cards_conf[0].device_num)
-            fatal("MegaPPBox: the RTL8139 is missing from this build\n");
+            fatal("MegaPPBox: the network card (%s) is missing from this build\n", card);
     }
 }
 
