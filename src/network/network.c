@@ -82,15 +82,14 @@ typedef struct net_card_migrate_t {
 /* MegaPPBox keeps two cards, on SLiRP: the RTL8139 the Linux MAXX releases
    can drive (8139too) -- no Megatouch cabinet had it built in; it stands in
    for the broadband adapter an operator could fit -- and for the DOS MAXX
-   releases the two ISA TRENDnet cards their STARTTCP.BAT looks for at 0x340:
-   the TE-16XP ("old", the default: MAXX 2K knows only it) and the TE-16PT
-   (RTL8019AS, "new"). */
+   releases the ISA TRENDnet TE-16XP at 0x340, which every one of them from
+   MAXX 2K on drives (the later ones also knew the newer TE-16PT; one card
+   that works everywhere is enough, and a saved "te16pt" becomes the TE-16XP). */
 static const NETWORK_CARD net_cards[] = {
     // clang-format off
     { &device_none                },
     { &device_internal            },
     { &rtl8139c_plus_device       },
-    { &te16pt_device              },
     { &te16xp_device              },
     { NULL                        }
     // clang-format on
@@ -98,6 +97,7 @@ static const NETWORK_CARD net_cards[] = {
 
 static const net_card_migrate_t
 net_cards_migrate[] = {
+    { .device = &te16xp_device, .old_internal_name = "te16pt" },
     { .device = NULL, .old_internal_name = "" }
 };
 

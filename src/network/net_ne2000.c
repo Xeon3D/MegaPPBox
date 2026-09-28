@@ -1522,23 +1522,6 @@ nic_init(const device_t *info)
                     dev->eeprom_data[0x02] = 0x81;
                     dev->eeprom_data[0x03] = 0x01;
                     memcpy(&dev->eeprom_data[0x04], dev->maclocal, 6);
-                    /* MegaPPBox: the TRENDnet TE-16PT as the DOS MAXX releases
-                       expect it -- jumperless (not PnP) at 0x340, where
-                       STARTTCP.BAT's "wtrend 340" looks, on IRQ 11 as Merit
-                       set it up (the Linux releases' /etc/modules.ne says
-                       "options ne irq=11 io=0x340"); both can be changed in
-                       the card's configuration. */
-                    if (info == &te16pt_device) {
-                        static const uint8_t irq_idx[16] = { [3] = 1, [4] = 2, [5] = 3, [9] = 0, [10] = 4, [11] = 5, [12] = 6, [15] = 7 };
-
-                        dev->eeprom_data[0x00] = 0x80 | (irq_idx[device_get_config_int("irq") & 15] << 4) | 0x02;
-                        dev->eeprom_data[0x02] = 0x00;
-                        /* CONFIG0 bits 7:6, VERID: 01, an RTL8019AS.  PNPODI
-                           reads it and, on 00, drives an older part's early-
-                           transmit register at +0x15 instead of sending with
-                           CR = 0x26, so nothing ever goes out. */
-                        dev->config0 |= 0x40;
-                    }
                     break;
 
                 default:
@@ -2177,7 +2160,7 @@ const device_t rtl8019as_pnp_device = {
 };
 
 // clang-format off
-static const device_config_t te16pt_config[] = {
+static const device_config_t te16xp_config[] = {
     {
         .name           = "irq",
         .description    = "IRQ",
@@ -2214,21 +2197,6 @@ static const device_config_t te16pt_config[] = {
 };
 // clang-format on
 
-/* MegaPPBox: the ISA card the DOS MAXX releases look for (see nic_init). */
-const device_t te16pt_device = {
-    .name          = "TRENDnet TE-16PT (RTL8019AS)",
-    .internal_name = "te16pt",
-    .flags         = DEVICE_ISA16,
-    .local         = NE2K_RTL8019AS_PNP,
-    .init          = nic_init,
-    .close         = nic_close,
-    .reset         = nic_config_reset,
-    .available     = rtl8019as_available,
-    .speed_changed = NULL,
-    .force_redraw  = NULL,
-    .config        = te16pt_config
-};
-
 /* MegaPPBox: the "old" ISA card of the DOS MAXX releases (see te16xp_read):
    what MAXX 2K V4.00/V4.01 need, and what the later releases also drive. */
 const device_t te16xp_device = {
@@ -2242,7 +2210,7 @@ const device_t te16xp_device = {
     .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
-    .config        = te16pt_config
+    .config        = te16xp_config
 };
 
 const device_t de220p_device = {

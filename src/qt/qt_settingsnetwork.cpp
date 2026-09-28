@@ -23,6 +23,7 @@ extern "C" {
 #include <86box/timer.h>
 #include <86box/thread.h>
 #include <86box/network.h>
+#include <86box/megatouch.h>
 }
 
 #include "qt_models_common.hpp"
@@ -183,6 +184,13 @@ SettingsNetwork::SettingsNetwork(QWidget *parent)
 {
     ui->setupUi(this);
 
+    /* MegaPPBox: a cabinet has one network card, so one tab.  The other slots'
+       widgets stay (unshown) so the code below needs no special case; their
+       cards stay "None". */
+    while (ui->tabWidgetNet->count() > 1)
+        ui->tabWidgetNet->removeTab(1);
+    ui->tabWidgetNet->setTabText(0, tr("Network card"));
+
     for (int i = 0; i < NET_CARD_MAX; i++) {
         sc[i]                           = new SettingsCompleter(findChild<QComboBox *>(QString("comboBoxNIC%1").arg(i + 1)), nullptr);
         scDevice[i]                     = new SettingsCompleter(findChild<QComboBox *>(QString("comboBoxIntf%1").arg(i + 1)), nullptr);
@@ -337,6 +345,22 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
     int                 removeRows_[NET_CARD_MAX]  = { 0 };
     int                 selectedRows[NET_CARD_MAX] = { 0 };
     int                 m_has_net                  = machine_has_flags(machineId, MACHINE_NIC);
+    const char         *mt_card                    = megatouch_network_card();
+    netcard_conf_t      shown[NET_CARD_MAX];
+
+    /* MegaPPBox: with the image's network option off there is no card, but
+       the dialog still shows what it would be plugged into (the image's saved
+       settings), so turning it on is picking the card. */
+    for (uint8_t i = 0; i < NET_CARD_MAX; ++i) {
+        shown[i] = net_cards_conf[i];
+        if (!shown[i].device_num) {
+            netcard_conf_t saved;
+            if (megatouch_network_saved(i, &saved)) {
+                saved.device_num = 0;
+                shown[i]         = saved;
+            }
+        }
+    }
 
     for (uint8_t i = 0; i < NET_CARD_MAX; ++i) {
         sc[i]->removeRows();
@@ -354,7 +378,9 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
         if (name.isEmpty())
             break;
 
-        if (network_card_available(c)) {
+        /* MegaPPBox: "None" and the profile's own card only. */
+        if (network_card_available(c) &&
+            ((c == 0) || (mt_card && !strcmp(network_card_get_internal_name(c), mt_card)))) {
             if (device_is_valid(network_card_getdevice(c), machineId)) {
                 for (uint8_t i = 0; i < NET_CARD_MAX; ++i) {
                     if ((c != 1) || ((i == 0) && m_has_net)) {
@@ -383,31 +409,24 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
         auto cbox       = findChild<QComboBox *>(QString("comboBoxNet%1").arg(i + 1));
         auto model      = cbox->model();
         auto removeRows = model->rowCount();
-        Models::AddEntry(model, tr("Null Driver"), NET_TYPE_NONE);
-        Models::AddEntry(model, "SLiRP", NET_TYPE_SLIRP);
+        /* MegaPPBox: what a cabinet's card can be plugged into -- the internet
+           (NAT), a real network card, or the switch the other cabinets are on
+           (Mega-Link), on this PC or LAN or over the internet. */
+        Models::AddEntry(model, tr("SLiRP (NAT, the internet)"), NET_TYPE_SLIRP);
 
         if (network_ndev > 1)
-            Models::AddEntry(model, "PCap", NET_TYPE_PCAP);
+            Models::AddEntry(model, tr("PCap (a network card on this PC)"), NET_TYPE_PCAP);
 
-#ifdef HAS_VDE
-        if (network_devmap.has_vde)
-            Models::AddEntry(model, "VDE", NET_TYPE_VDE);
-#endif
-
-#if defined(__unix__) || defined(__APPLE__)
-        Models::AddEntry(model, "TAP", NET_TYPE_TAP);
-#endif
-
-        Models::AddEntry(model, tr("Local Switch"), NET_TYPE_NLSWITCH);
-        Models::AddEntry(model, tr("Remote Switch"), NET_TYPE_NRSWITCH); /* PeepeeBox: implemented in net_switch.c */
+        Models::AddEntry(model, tr("Local Switch (Mega-Link on this PC or LAN)"), NET_TYPE_NLSWITCH);
+        Models::AddEntry(model, tr("Remote Switch (Mega-Link over the internet)"), NET_TYPE_NRSWITCH); /* PeepeeBox: implemented in net_switch.c */
 
         model->removeRows(0, removeRows);
-        cbox->setCurrentIndex(cbox->findData(net_cards_conf[i].net_type));
+        cbox->setCurrentIndex(qMax(0, cbox->findData(shown[i].net_type)));
 
         selectedRow = 0;
 
         if (network_ndev > 0) {
-            QString currentPcapDevice = net_cards_conf[i].host_dev_name;
+            QString currentPcapDevice = shown[i].host_dev_name;
             cbox                      = findChild<QComboBox *>(QString("comboBoxIntf%1").arg(i + 1));
             model                     = cbox->model();
             removeRows                = model->rowCount();
@@ -422,30 +441,30 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
             cbox->setCurrentIndex(selectedRow);
         }
 
-        if (net_cards_conf[i].net_type == NET_TYPE_VDE) {
+        if (shown[i].net_type == NET_TYPE_VDE) {
 #ifdef HAS_VDE
-            QString currentVdeSocket = net_cards_conf[i].host_dev_name;
+            QString currentVdeSocket = shown[i].host_dev_name;
             auto    editline         = findChild<QLineEdit *>(QString("socketVDENIC%1").arg(i + 1));
             editline->setText(currentVdeSocket);
 #else
             ;
 #endif
 #if defined(__unix__) || defined(__APPLE__)
-        } else if (net_cards_conf[i].net_type == NET_TYPE_TAP) {
-            QString currentTapDevice = net_cards_conf[i].host_dev_name;
+        } else if (shown[i].net_type == NET_TYPE_TAP) {
+            QString currentTapDevice = shown[i].host_dev_name;
             auto    editline         = findChild<QLineEdit *>(QString("bridgeTAPNIC%1").arg(i + 1));
             editline->setText(currentTapDevice);
 #endif
-        } else if (net_cards_conf[i].net_type == NET_TYPE_NLSWITCH) {
+        } else if (shown[i].net_type == NET_TYPE_NLSWITCH) {
             auto *promisc_value = findChild<QCheckBox *>(QString("boxPromisc%1").arg(i + 1));
-            promisc_value->setCheckState(net_cards_conf[i].promisc_mode == 1 ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
+            promisc_value->setCheckState(shown[i].promisc_mode == 1 ? Qt::CheckState::Checked : Qt::CheckState::Unchecked);
             auto *secret_value = findChild<QLineEdit *>(QString("secretSwitch%1").arg(i + 1));
-            secret_value->setText(net_cards_conf[i].secret);
-        } else if (net_cards_conf[i].net_type == NET_TYPE_NRSWITCH) {
+            secret_value->setText(shown[i].secret);
+        } else if (shown[i].net_type == NET_TYPE_NRSWITCH) {
             auto *hostname_value = findChild<QLineEdit *>(QString("hostnameSwitch%1").arg(i + 1));
-            hostname_value->setText(net_cards_conf[i].nrs_hostname);
+            hostname_value->setText(shown[i].nrs_hostname);
             auto *secret_value = findChild<QLineEdit *>(QString("secretSwitch%1").arg(i + 1));
-            secret_value->setText(net_cards_conf[i].secret);
+            secret_value->setText(shown[i].secret);
         }
     }
 }

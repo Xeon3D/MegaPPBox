@@ -95,6 +95,9 @@ extern void megatouch_set_image_option(const char *image, const char *name, int 
 
 /* Keep the Network dialog's settings (net_cards_conf[]) with the image. */
 extern void megatouch_network_to_image(void);
+extern const char *megatouch_network_card(void);
+struct netcard_conf_t;
+extern int megatouch_network_saved(int k, struct netcard_conf_t *nc);
 
 /* The Merit I/O board calls this on every access: with the TE-16 fitted on
    MAXX (Old), the BIOS segment carries the Mitsubishi board's "Apricot"

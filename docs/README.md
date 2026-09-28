@@ -36,9 +36,9 @@ profile it will use. Before pressing **Run** you can change:
 - **Network card** (MAXX only), behind NAT. Off by default.
   - On MAXX (Old): an ISA TRENDnet TE-16XP, jumperless at 0x340, IRQ 11. Every
     DOS release from MAXX 2K on loads its drivers from `C:\ETHERNET` (`LSL`,
-    `ODI.COM`, `NPTSR`); from 2K Plus on `STARTTCP.BAT` also takes the newer
-    TE-16PT (RTL8019AS, `PNPODI`), which *Tools > Network settings...* can fit
-    instead. Double Diamond on look for the card only on the original MAXX's
+    `ODI.COM`, `NPTSR`). (From 2K Plus on they also knew the newer TE-16PT;
+    2K did not, so the one card that works for all is fitted.) Double Diamond
+    on look for the card only on the original MAXX's
     Mitsubishi "Apricot" board, so with a card fitted the emulated BIOS carries
     that board's identity too.
   - On MAXX (New): an RTL8139, which the Linux releases (Ruby onward) can use.
@@ -48,17 +48,19 @@ when the image starts.
 
 ### Network settings and Mega-Link
 
-*Tools > Network settings...* chooses the card and what it is plugged into:
-**SLiRP** (NAT to the internet), **PCap** (a real network card on this PC),
-or a **switch** shared with other MegaPPBox cabinets. The settings, and the
-card's MAC address, are kept with the image.
+*Tools > Network settings...* fits the cabinet's card (or *None*) and chooses
+what it is plugged into: **SLiRP** (NAT to the internet), **PCap** (a real
+network card on this PC), or a **switch** shared with other MegaPPBox cabinets
+— **Local Switch** (this PC or LAN) or **Remote Switch** (over the internet).
+The settings, and the card's MAC address, are kept with the image; with the
+network option off the dialog still shows them, and fitting the card turns it on.
 
 Mega-Link — up to 8 cabinets linked for head-to-head games, over a crossover
 cable or a hub on the real thing — is the switch:
 
 1. Run each cabinet from its own MegaPPBox folder, with its own copy of the
    image (two cabinets must never share one image file).
-2. In each, *Tools > Network settings...*: the network card, network type
+2. In each, *Tools > Network settings...*: the network card, connection
    **Local Switch** (cabinets on this PC or this LAN; give them the same
    shared secret, or none) or **Remote Switch** (over the internet, to a
    switch server). Reset when asked.
@@ -68,7 +70,8 @@ cable or a hub on the real thing — is the switch:
    see each other (*Setup > Games > Options > Linked Games Enabled*). All
    linked games must run the same software version.
 
-Tested with two Emerald V8.04 cabinets on a local switch.
+Tested on a local switch with every DOS release from MAXX 2K and every Linux
+release (up to six cabinets).
 
 *Show images that cannot run here* also lists restore discs and unrecognised
 files, with the reason each one is not offered.

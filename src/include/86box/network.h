@@ -255,9 +255,6 @@ extern const device_t plip_device;
 /* Realtek RTL8139C+ */
 extern const device_t rtl8139c_plus_device;
 
-/* TRENDnet TE-16PT (RTL8019AS, ISA, jumperless at 0x340) */
-extern const device_t te16pt_device;
-
 /* TRENDnet TE-16XP (NE2000 + D-Link EEPROM/ID PROM, jumperless at 0x340) */
 extern const device_t te16xp_device;
 

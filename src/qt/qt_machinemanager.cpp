@@ -94,7 +94,7 @@ MachineManager::MachineManager(QWidget *parent)
     board->addItem(tr("ASUS P/I-P55TVP4 (i430VX)"), MT_BOARD_P55TVP4);
     key     = new QComboBox;
     modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
-    networkBox = new QCheckBox(tr("Network card (NAT): TRENDnet TE-16XP on MAXX (Old), RTL8139 on MAXX (New)"));
+    networkBox = new QCheckBox(tr("Network card: TRENDnet TE-16XP on MAXX (Old), RTL8139 on MAXX (New) — NAT, or Mega-Link via Tools > Network settings..."));
     details = new QLabel;
     details->setWordWrap(true);
     details->setTextInteractionFlags(Qt::TextSelectableByMouse);
