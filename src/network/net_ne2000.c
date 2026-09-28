@@ -222,6 +222,18 @@ nic_soft_reset(void *priv)
         dev->irq_level         = 0x02;
 }
 
+/* MegaPPBox: at the end of a remote DMA the Realtek parts show it in the
+   command register too: RD2 set, "abort/complete DMA" (CR reads 0x22 after a
+   0x12 write).  The RTL8019 ODI driver Emerald loads (PNPODI) waits for that
+   after copying a frame in, before it sends it -- without it every send
+   stuck ("odiSending stuck in pktd_send" in C:\DEBUG.DAT). */
+static void
+nic_rdma_complete(nic_t *dev)
+{
+    if (dev->board >= NE2K_RTL8019AS_PNP)
+        dev->dp8390->CR.rdma_cmd = 4;
+}
+
 /*
  * Access the ASIC I/O space.
  *
@@ -282,6 +294,7 @@ asic_read(nic_t *dev, uint32_t off, unsigned int len)
             if (dev->dp8390->remote_bytes == 0) {
                 nelog(3, "%s: DMA read: done (%i)\n", dev->name, dev->dp8390->IMR.rdma_inte);
                 dev->dp8390->ISR.rdma_done = 1;
+                nic_rdma_complete(dev);
                 if (dev->dp8390->IMR.rdma_inte)
                     nic_interrupt(dev, 1);
             }
@@ -341,6 +354,7 @@ asic_write(nic_t *dev, uint32_t off, uint32_t val, unsigned len)
             /* If all bytes have been written, signal remote-DMA complete */
             if (dev->dp8390->remote_bytes == 0) {
                 dev->dp8390->ISR.rdma_done = 1;
+                nic_rdma_complete(dev);
                 if (dev->dp8390->IMR.rdma_inte)
                     nic_interrupt(dev, 1);
             }
@@ -1381,13 +1395,20 @@ nic_init(const device_t *info)
                     memcpy(&dev->eeprom_data[0x04], dev->maclocal, 6);
                     /* MegaPPBox: the TRENDnet TE-16PT as the DOS MAXX releases
                        expect it -- jumperless (not PnP) at 0x340, where
-                       STARTTCP.BAT's "wtrend 340" looks, on the IRQ chosen in
-                       the device's configuration. */
+                       STARTTCP.BAT's "wtrend 340" looks, on IRQ 11 as Merit
+                       set it up (the Linux releases' /etc/modules.ne says
+                       "options ne irq=11 io=0x340"); both can be changed in
+                       the card's configuration. */
                     if (info == &te16pt_device) {
                         static const uint8_t irq_idx[16] = { [3] = 1, [4] = 2, [5] = 3, [9] = 0, [10] = 4, [11] = 5, [12] = 6, [15] = 7 };
 
                         dev->eeprom_data[0x00] = 0x80 | (irq_idx[device_get_config_int("irq") & 15] << 4) | 0x02;
                         dev->eeprom_data[0x02] = 0x00;
+                        /* CONFIG0 bits 7:6, VERID: 01, an RTL8019AS.  PNPODI
+                           reads it and, on 00, drives an older part's early-
+                           transmit register at +0x15 instead of sending with
+                           CR = 0x26, so nothing ever goes out. */
+                        dev->config0 |= 0x40;
                     }
                     break;
 
@@ -2030,7 +2051,7 @@ static const device_config_t te16pt_config[] = {
         .description    = "IRQ",
         .type           = CONFIG_SELECTION,
         .default_string = NULL,
-        .default_int    = 10,
+        .default_int    = 11,
         .file_filter    = NULL,
         .spinner        = { 0 },
         .selection      = {

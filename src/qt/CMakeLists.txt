@@ -167,6 +167,11 @@ add_library(ui STATIC
 
     qt_settings_completer.cpp
     qt_settings_completer.hpp
+    qt_settingsnetwork.cpp
+    qt_settingsnetwork.hpp
+    qt_settingsnetwork.ui
+    qt_networksettings.cpp
+    qt_networksettings.hpp
 
     qt_deviceconfig.cpp
     qt_deviceconfig.hpp

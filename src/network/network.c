@@ -203,7 +203,11 @@ network_init(void)
     /* Initialize the Pcap system module, if present. */
 
     network_devmap.has_slirp = 1;
-    (void) i;
+    i = net_pcap_prepare(&network_devs[network_ndev]);
+    if (i > 0) {
+        network_devmap.has_pcap = 1;
+        network_ndev += i;
+    }
     
 #ifdef HAS_VDE
     // Try to load the VDE plug library
@@ -444,11 +448,23 @@ network_attach(void *card_drv, uint8_t *mac, NETRXCB rx, NETSETLINKSTATE set_lin
         network_queue_init(&card->queues[i]);
     }
 
-    /* SLiRP is the only backend MegaPPBox carries. */
+    /* SLiRP (NAT), PCap (a real network card on the host) and the switch
+       (other emulated cabinets: Mega-Link) are what MegaPPBox carries. */
     switch (net_type) {
         case NET_TYPE_SLIRP:
             card->host_drv      = net_slirp_drv;
             card->host_drv.priv = card->host_drv.init(card, mac, NULL, net_drv_error);
+            break;
+
+        case NET_TYPE_PCAP:
+            card->host_drv      = net_pcap_drv;
+            card->host_drv.priv = card->host_drv.init(card, mac, net_cards_conf[net_card_current].host_dev_name, net_drv_error);
+            break;
+
+        case NET_TYPE_NLSWITCH:
+        case NET_TYPE_NRSWITCH:
+            card->host_drv      = net_switch_drv;
+            card->host_drv.priv = card->host_drv.init(card, mac, &net_cards_conf[net_card_current], net_drv_error);
             break;
 
         default:

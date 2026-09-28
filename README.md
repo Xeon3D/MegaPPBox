@@ -53,11 +53,14 @@ Two options are kept per image, both off by default: **Modem on COM2** (an
 ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; it can dial a TCP
 host, such as a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
 server, which brings the DOS releases' tournaments back) and, on MAXX,
-**Network card** behind SLiRP NAT: on MAXX (Old) an ISA TRENDnet TE-16PT
-(RTL8019AS) at 0x340, IRQ 10, the card Emerald's `STARTTCP.BAT` finds and
-loads its ODI driver for (on the original MAXX's Mitsubishi "Apricot" board,
-whose identity the emulated BIOS then carries); on MAXX (New) an RTL8139, which
-the Linux releases drive with 8139too.
+**Network card**: on MAXX (Old) an ISA TRENDnet TE-16PT (RTL8019AS) at 0x340,
+IRQ 11, the card Emerald's `STARTTCP.BAT` finds and loads its ODI driver for
+(on the original MAXX's Mitsubishi "Apricot" board, whose identity the
+emulated BIOS then carries); on MAXX (New) an RTL8139, which the Linux
+releases drive with 8139too. *Tools > Network settings...* (PeepeeBox's
+dialog) plugs it into SLiRP NAT, a real network card (PCap) or a switch shared
+with other MegaPPBox cabinets — **Mega-Link**, the head-to-head games Merit
+linked over a hub (see [docs/README.md](docs/README.md)).
 
 Everything the folder needs lives inside it — all settings in `MegaPPBox.cfg`
 (including the images folder and the image in use), the CMOS in `nvr\` —

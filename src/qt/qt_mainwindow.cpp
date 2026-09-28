@@ -22,6 +22,7 @@
 
 #include "qt_mainwindow.hpp"
 #include "qt_autoupdate.hpp"
+#include "qt_networksettings.hpp"
 #include "qt_megatouch_ident.hpp"
 #include "ui_qt_mainwindow.h"
 
@@ -371,16 +372,19 @@ MainWindow::MainWindow(QWidget *parent)
         modemAct->setCheckable(true);
         netAct->setCheckable(true);
         auto *modemCfg = new QAction(tr("Modem &settings..."), this);
+        auto *netCfg   = new QAction(tr("Net&work settings..."), this);
         ui->menuTools->insertAction(cabinetEnd, modemAct);
         ui->menuTools->insertAction(cabinetEnd, modemCfg);
         ui->menuTools->insertAction(cabinetEnd, netAct);
+        ui->menuTools->insertAction(cabinetEnd, netCfg);
         ui->menuTools->insertSeparator(cabinetEnd);
-        connect(ui->menuTools, &QMenu::aboutToShow, this, [modemAct, netAct]() {
+        connect(ui->menuTools, &QMenu::aboutToShow, this, [modemAct, netAct, netCfg]() {
             const char *img  = megatouch_image();
             const bool  has  = img && img[0];
             const bool  maxx = MT_IS_MAXX(megatouch_profile());
             modemAct->setEnabled(has);
             netAct->setEnabled(has && maxx);
+            netCfg->setEnabled(has && maxx);
             modemAct->setChecked(has && megatouch_image_option(img, MT_OPT_MODEM));
             netAct->setChecked(has && maxx && megatouch_image_option(img, MT_OPT_NETWORK));
         });
@@ -412,6 +416,26 @@ MainWindow::MainWindow(QWidget *parent)
             }
         });
         connect(netAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_NETWORK, on); });
+        /* The cards and what they plug into (PeepeeBox's dialog): NAT, a host
+           network card, or a switch shared with other cabinets -- Mega-Link. */
+        connect(netCfg, &QAction::triggered, this, [this]() {
+            const int currentPause = dopause;
+
+            plat_pause(1);
+            NetworkSettings dialog(this);
+            dialog.setModal(true);
+            dialog.setWindowModality(Qt::WindowModal);
+            if (dialog.exec() == QDialog::Accepted) {
+                config_save();
+                if (QMessageBox::question(this, EMU_NAME,
+                                          tr("The change takes effect at the next hard reset. Reset now?"))
+                    == QMessageBox::Yes) {
+                    config_changed = 2;
+                    pc_reset_hard();
+                }
+            }
+            plat_pause(currentPause);
+        });
 
         /* The modem's speaker (dial tone, dialling, ringing, the handshake):
            heard or not, at once; the call takes as long either way. */

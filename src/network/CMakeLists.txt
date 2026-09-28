@@ -8,6 +8,8 @@
 add_library(net OBJECT
     network.c
     net_slirp.c
+    net_pcap.c
+    net_switch.c
     net_event.c
     net_null.c
     net_rtl8139.c

@@ -61,6 +61,7 @@
 #include <86box/char.h>
 #include <86box/thread.h>
 #include <86box/network.h>
+#include <86box/random.h>
 #include <86box/hdd.h>
 #include <86box/scsi_device.h>
 #include <86box/cdrom.h>
@@ -569,29 +570,163 @@ mt_apply_input(void)
     }
 }
 
-/* The network card, when the image has one fitted, on SLiRP.  The Linux MAXX
-   releases get an RTL8139, which they drive with 8139too and ask DHCP for an
-   address.  The DOS releases get an ISA TRENDnet TE-16PT (RTL8019AS),
-   jumperless at 0x340: Emerald's C:\ETHERNET\STARTTCP.BAT runs "wtrend 340",
-   which names it the "new" TE-16PT, and loads PNPODI, the RTL8019 ODI driver. */
+/* The network cards, when the image has one fitted.  By default the first is
+   on SLiRP (NAT): for the Linux MAXX releases an RTL8139, which they drive
+   with 8139too and ask DHCP for an address; for the DOS releases an ISA
+   TRENDnet TE-16PT (RTL8019AS), jumperless at 0x340: Emerald's
+   C:\ETHERNET\STARTTCP.BAT runs "wtrend 340", which names it the "new"
+   TE-16PT, and loads PNPODI, the RTL8019 ODI driver.  (The Linux releases
+   drive that card too, with ne.o at 0x340, IRQ 11, when no RTL8139 is on the
+   PCI bus: /sbin/harddetect.sh.)
+
+   Mega-Link -- up to 8 cabinets on a crossover cable or a 10Base-T hub --
+   is the switch: every cabinet on the same local switch (or the same remote
+   one) is on one Ethernet segment.  The Network dialog sets it all, per
+   image, in its [MegaPPBox image N] section, card slot K = 1-4:
+     network        whether any card is fitted (the Machine Manager's box)
+     netK_card      the card's internal name, or none
+     netK_type      none, slirp, pcap, lswitch, rswitch
+     netK_host      the host network card PCap uses
+     netK_secret    the switch's shared secret: cabinets with the same one link
+     netK_promisc   the switch passes every frame on, not only the card's own
+     netK_switch    the remote switch, host[:port]
+     netK_mac       the card's address (the low three bytes), made once per
+                    image, so two cabinets never share one */
 static int      mt_apricot;    /* 1 = wanted, 2 = in place at mt_apricot_at, -1 = no room */
 static uint32_t mt_apricot_at;
+
+static const char *mt_net_types[] = {
+    [NET_TYPE_NONE] = "none", [NET_TYPE_SLIRP] = "slirp", [NET_TYPE_PCAP] = "pcap",
+    [NET_TYPE_VDE] = "vde", [NET_TYPE_TAP] = "tap",
+    [NET_TYPE_NLSWITCH] = "lswitch", [NET_TYPE_NRSWITCH] = "rswitch"
+};
+
+static void
+mt_net_key(char *key, size_t len, int k, const char *name)
+{
+    snprintf(key, len, "net%d_%s", k + 1, name);
+}
+
+/* The configuration section of card slot k's device, where it reads its MAC. */
+static void
+mt_net_dev_section(char *sec, size_t len, int k)
+{
+    const device_t *dev = network_card_getdevice(net_cards_conf[k].device_num);
+
+    snprintf(sec, len, "%s #%i", dev ? dev->name : "", k + 1);
+}
 
 static void
 mt_apply_network(void)
 {
+    char sec[64];
+    char key[32];
+    char devsec[128];
+
     memset(net_cards_conf, 0, sizeof(net_cards_conf));
     mt_apricot = 0;
-    if (MT_IS_MAXX(mt_profile) && megatouch_image_option(mt_image, MT_OPT_NETWORK)) {
-        const char *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16pt" : "rtl8139c+";
+    if (!MT_IS_MAXX(mt_profile) || !megatouch_image_option(mt_image, MT_OPT_NETWORK) ||
+        !mt_image_section(mt_image, 0, sec, sizeof(sec)))
+        return;
 
-        mt_apricot = (mt_profile == MT_PROFILE_MAXX_OLD);
+    for (int k = 0; k < NET_CARD_MAX; k++) {
+        netcard_conf_t *nc   = &net_cards_conf[k];
+        const char     *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16pt" : "rtl8139c+";
+        const char     *s;
+        int             mac;
 
-        net_cards_conf[0].device_num = network_card_get_from_internal_name((char *) card);
-        net_cards_conf[0].net_type   = NET_TYPE_SLIRP;
-        if (!net_cards_conf[0].device_num)
-            fatal("MegaPPBox: the network card (%s) is missing from this build\n", card);
+        mt_net_key(key, sizeof(key), k, "card");
+        card = config_get_string(sec, key, (char *) ((k == 0) ? card : "none"));
+        if (!strcmp(card, "none"))
+            continue;
+        nc->device_num = network_card_get_from_internal_name((char *) card);
+        if (!nc->device_num) {
+            pclog("MegaPPBox: network card %s is not in this build\n", card);
+            continue;
+        }
+
+        nc->net_type = NET_TYPE_SLIRP;
+        mt_net_key(key, sizeof(key), k, "type");
+        s = config_get_string(sec, key, "slirp");
+        for (int t = 0; t < (int) (sizeof(mt_net_types) / sizeof(mt_net_types[0])); t++)
+            if (mt_net_types[t] && !strcmp(s, mt_net_types[t]))
+                nc->net_type = t;
+
+        mt_net_key(key, sizeof(key), k, "host");
+        snprintf(nc->host_dev_name, sizeof(nc->host_dev_name), "%s", config_get_string(sec, key, ""));
+        mt_net_key(key, sizeof(key), k, "secret");
+        snprintf(nc->secret, sizeof(nc->secret), "%s", config_get_string(sec, key, ""));
+        mt_net_key(key, sizeof(key), k, "switch");
+        snprintf(nc->nrs_hostname, sizeof(nc->nrs_hostname), "%s", config_get_string(sec, key, ""));
+        mt_net_key(key, sizeof(key), k, "promisc");
+        nc->promisc_mode = !!config_get_int(sec, key, 0);
+
+        /* The card's MAC is the image's, not the folder's. */
+        mt_net_key(key, sizeof(key), k, "mac");
+        mac = config_get_mac(sec, key, -1);
+        if (mac & 0xff000000) {
+            mac = (random_generate() << 16) | (random_generate() << 8) | random_generate();
+            config_set_mac(sec, key, mac);
+        }
+        mt_net_dev_section(devsec, sizeof(devsec), k);
+        config_set_mac(devsec, "mac", mac);
+
+        if ((mt_profile == MT_PROFILE_MAXX_OLD) && !strcmp(card, "te16pt"))
+            mt_apricot = 1;
     }
+}
+
+/* After the Network dialog: keep what it set with the image. */
+void
+megatouch_network_to_image(void)
+{
+    char sec[64];
+    char key[32];
+    char devsec[128];
+    int  any = 0;
+
+    if (!MT_IS_MAXX(mt_profile))
+        return;
+    for (int k = 0; k < NET_CARD_MAX; k++)
+        any |= (net_cards_conf[k].device_num > 0);
+    /* No card at all is the network option off; what the cards were stays
+       for when it is back on. */
+    if (!any) {
+        megatouch_set_image_option(mt_image, MT_OPT_NETWORK, 0);
+        return;
+    }
+    if (!mt_image_section(mt_image, 1, sec, sizeof(sec)))
+        return;
+
+    for (int k = 0; k < NET_CARD_MAX; k++) {
+        const netcard_conf_t *nc = &net_cards_conf[k];
+        const int             on = (nc->device_num > 0);
+        int                   mac;
+
+        mt_net_key(key, sizeof(key), k, "card");
+        config_set_string(sec, key, (char *) (on ? network_card_get_internal_name(nc->device_num) : "none"));
+        if (!on)
+            continue;
+        mt_net_key(key, sizeof(key), k, "type");
+        config_set_string(sec, key, (char *) (((nc->net_type >= 0) && (nc->net_type <= NET_TYPE_NRSWITCH)) ? mt_net_types[nc->net_type] : "slirp"));
+        mt_net_key(key, sizeof(key), k, "host");
+        config_set_string(sec, key, (char *) nc->host_dev_name);
+        mt_net_key(key, sizeof(key), k, "secret");
+        config_set_string(sec, key, (char *) nc->secret);
+        mt_net_key(key, sizeof(key), k, "switch");
+        config_set_string(sec, key, (char *) nc->nrs_hostname);
+        mt_net_key(key, sizeof(key), k, "promisc");
+        config_set_int(sec, key, nc->promisc_mode);
+
+        /* A MAC set with Configure... goes with the image too. */
+        mt_net_dev_section(devsec, sizeof(devsec), k);
+        mac = config_get_mac(devsec, "mac", -1);
+        if (!(mac & 0xff000000)) {
+            mt_net_key(key, sizeof(key), k, "mac");
+            config_set_mac(sec, key, mac);
+        }
+    }
+    config_set_int(sec, MT_OPT_NETWORK, 1);
 }
 
 /* Which cabinet board Emerald's C:\MTOOLS\CMOS\WBOARD.EXE sees.  It looks for

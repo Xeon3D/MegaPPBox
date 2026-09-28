@@ -35,13 +35,37 @@ profile it will use. Before pressing **Run** you can change:
   for the DOS releases' tournaments and updates.
 - **Network card** (MAXX only), behind NAT. Off by default.
   - On MAXX (Old): an ISA TRENDnet TE-16PT (RTL8019AS), jumperless at 0x340,
-    IRQ 10. Emerald's `C:\ETHERNET\STARTTCP.BAT` loads its drivers (`LSL`,
+    IRQ 11. Emerald's `C:\ETHERNET\STARTTCP.BAT` loads its drivers (`LSL`,
     `PNPODI`, `NPTSR`) on the original MAXX's Mitsubishi "Apricot" board, so with
     the card fitted the emulated BIOS carries that board's identity too.
   - On MAXX (New): an RTL8139, which the Linux releases (Ruby onward) can use.
 
 Both options are kept with each image, in `MegaPPBox.cfg`, and take effect
 when the image starts.
+
+### Network settings and Mega-Link
+
+*Tools > Network settings...* chooses the card and what it is plugged into:
+**SLiRP** (NAT to the internet), **PCap** (a real network card on this PC),
+or a **switch** shared with other MegaPPBox cabinets. The settings, and the
+card's MAC address, are kept with the image.
+
+Mega-Link — up to 8 cabinets linked for head-to-head games, over a crossover
+cable or a hub on the real thing — is the switch:
+
+1. Run each cabinet from its own MegaPPBox folder, with its own copy of the
+   image (two cabinets must never share one image file).
+2. In each, *Tools > Network settings...*: the network card, network type
+   **Local Switch** (cabinets on this PC or this LAN; give them the same
+   shared secret, or none) or **Remote Switch** (over the internet, to a
+   switch server). Reset when asked.
+3. Allow MegaPPBox through the Windows firewall (private networks) when
+   Windows asks.
+4. The **Mega-Link** button appears on the main menu once two or more games
+   see each other (*Setup > Games > Options > Linked Games Enabled*). All
+   linked games must run the same software version.
+
+Tested with two Emerald V8.04 cabinets on a local switch.
 
 *Show images that cannot run here* also lists restore discs and unrecognised
 files, with the reason each one is not offered.
