@@ -573,10 +573,12 @@ mt_apply_input(void)
 /* The network cards, when the image has one fitted.  By default the first is
    on SLiRP (NAT): for the Linux MAXX releases an RTL8139, which they drive
    with 8139too and ask DHCP for an address; for the DOS releases an ISA
-   TRENDnet TE-16PT (RTL8019AS), jumperless at 0x340: Emerald's
-   C:\ETHERNET\STARTTCP.BAT runs "wtrend 340", which names it the "new"
-   TE-16PT, and loads PNPODI, the RTL8019 ODI driver.  (The Linux releases
-   drive that card too, with ne.o at 0x340, IRQ 11, when no RTL8139 is on the
+   TRENDnet TE-16XP, jumperless at 0x340, IRQ 11.  MAXX 2K V4.00/V4.01 load
+   its driver (C:\ETHERNET\ODI.COM) unconditionally; 2K Plus onward run
+   "wtrend 340" first, which names it the "old" TE-16XP/T and loads the same
+   ODI.COM.  The dialog can fit the "new" TE-16PT (RTL8019AS) instead, which
+   those later releases drive with PNPODI -- 2K cannot.  (The Linux releases
+   drive a TE-16PT too, with ne.o at 0x340, IRQ 11, when no RTL8139 is on the
    PCI bus: /sbin/harddetect.sh.)
 
    Mega-Link -- up to 8 cabinets on a crossover cable or a 10Base-T hub --
@@ -631,7 +633,7 @@ mt_apply_network(void)
 
     for (int k = 0; k < NET_CARD_MAX; k++) {
         netcard_conf_t *nc   = &net_cards_conf[k];
-        const char     *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16pt" : "rtl8139c+";
+        const char     *card = (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16xp" : "rtl8139c+";
         const char     *s;
         int             mac;
 
@@ -671,7 +673,7 @@ mt_apply_network(void)
         mt_net_dev_section(devsec, sizeof(devsec), k);
         config_set_mac(devsec, "mac", mac);
 
-        if ((mt_profile == MT_PROFILE_MAXX_OLD) && !strcmp(card, "te16pt"))
+        if ((mt_profile == MT_PROFILE_MAXX_OLD) && (!strcmp(card, "te16pt") || !strcmp(card, "te16xp")))
             mt_apricot = 1;
     }
 }

@@ -53,11 +53,12 @@ Two options are kept per image, both off by default: **Modem on COM2** (an
 ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; it can dial a TCP
 host, such as a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
 server, which brings the DOS releases' tournaments back) and, on MAXX,
-**Network card**: on MAXX (Old) an ISA TRENDnet TE-16PT (RTL8019AS) at 0x340,
-IRQ 11, the card Emerald's `STARTTCP.BAT` finds and loads its ODI driver for
-(on the original MAXX's Mitsubishi "Apricot" board, whose identity the
-emulated BIOS then carries); on MAXX (New) an RTL8139, which the Linux
-releases drive with 8139too. *Tools > Network settings...* (PeepeeBox's
+**Network card**: on MAXX (Old) an ISA TRENDnet TE-16XP at 0x340, IRQ 11 — the
+card every DOS release from MAXX 2K on loads its ODI driver for (2K knows no
+other; the later releases' `STARTTCP.BAT` also takes the newer TE-16PT, which
+the dialog can fit instead). Double Diamond on look for it only on the original
+MAXX's Mitsubishi "Apricot" board, whose identity the emulated BIOS then
+carries. On MAXX (New) an RTL8139, which the Linux releases drive with 8139too. *Tools > Network settings...* (PeepeeBox's
 dialog) plugs it into SLiRP NAT, a real network card (PCap) or a switch shared
 with other MegaPPBox cabinets — **Mega-Link**, the head-to-head games Merit
 linked over a hub (see [docs/README.md](docs/README.md)).
@@ -218,7 +219,7 @@ What was removed
 
 About 900 machines down to three boards; video to three cards; sound to two cards
 and the codec; networking down to two cards on SLiRP, per image (an RTL8139
-for the Linux MAXX releases, a TE-16PT ISA card for the DOS ones), SCSI, every non-IDE disk controller, ZIP/MO/tape,
+for the Linux MAXX releases, TE-16XP/TE-16PT ISA cards for the DOS ones), SCSI, every non-IDE disk controller, ZIP/MO/tape,
 cassette and cartridge, printers, ISA memory/ROM/RTC cards, the proprietary CD
 interfaces, the MIDI synthesisers, the Voodoo, the VM manager and the Settings
 dialog. The commit log says what went and why, one area at a time.

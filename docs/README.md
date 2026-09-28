@@ -34,10 +34,13 @@ profile it will use. Before pressing **Run** you can change:
   [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival) server
   for the DOS releases' tournaments and updates.
 - **Network card** (MAXX only), behind NAT. Off by default.
-  - On MAXX (Old): an ISA TRENDnet TE-16PT (RTL8019AS), jumperless at 0x340,
-    IRQ 11. Emerald's `C:\ETHERNET\STARTTCP.BAT` loads its drivers (`LSL`,
-    `PNPODI`, `NPTSR`) on the original MAXX's Mitsubishi "Apricot" board, so with
-    the card fitted the emulated BIOS carries that board's identity too.
+  - On MAXX (Old): an ISA TRENDnet TE-16XP, jumperless at 0x340, IRQ 11. Every
+    DOS release from MAXX 2K on loads its drivers from `C:\ETHERNET` (`LSL`,
+    `ODI.COM`, `NPTSR`); from 2K Plus on `STARTTCP.BAT` also takes the newer
+    TE-16PT (RTL8019AS, `PNPODI`), which *Tools > Network settings...* can fit
+    instead. Double Diamond on look for the card only on the original MAXX's
+    Mitsubishi "Apricot" board, so with a card fitted the emulated BIOS carries
+    that board's identity too.
   - On MAXX (New): an RTL8139, which the Linux releases (Ruby onward) can use.
 
 Both options are kept with each image, in `MegaPPBox.cfg`, and take effect

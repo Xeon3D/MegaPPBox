@@ -129,6 +129,16 @@ typedef struct nic_t {
     uint8_t    *pnp_csnsav;
 
     nmc93cxx_eeprom_t *eeprom;
+
+    /* TRENDnet TE-16XP (see te16xp_read) */
+    int         te16xp;
+    uint8_t     xp_prom[8];     /* +0x14..+0x1B: MAC, model, checksum */
+    uint16_t    xp_ee[128];     /* 93C56 serial EEPROM behind +0x1E */
+    uint8_t     xp_ee_state;
+    uint8_t     xp_ee_bits;
+    uint8_t     xp_ee_sk;
+    uint8_t     xp_ee_do;
+    uint16_t    xp_ee_shift;
 } nic_t;
 
 #ifdef ENABLE_NE2K_LOG
@@ -537,6 +547,105 @@ page3_write(nic_t *dev, uint32_t off, uint32_t val, UNUSED(unsigned len))
         nelog(3, "%s: Page3 write register 0x%02x attempted\n", dev->name, off);
 }
 
+/* MegaPPBox: the TRENDnet TE-16XP, the "old" card MAXX 2K's C:\ETHERNET\ODI.COM
+   ("TE-16XP Ethernet Driver MLID v3.52") drives, and the one the later DOS
+   releases take when WTREND calls a card at 0x340 "old".  An NE2000 (data
+   port +0x10, reset +0x1F) set up jumperless from a serial EEPROM, with
+   extras the driver's port scan (0x200-0x380) looks for:
+     +0x14..+0x19  the MAC, +0x1A a model byte (0x0A/0x64/0x65), +0x1B a
+                   checksum: the eight bytes sum to 0xFF;
+     +0x1E         the EEPROM: write bit 3 CS, bit 2 SK, bit 1 DI; read bit 0
+                   DO.  A 93C56 (8-bit word addresses): word 0 0x118B, 1-3
+                   the MAC, 4 the setup (bit 0 enabled; 8-11 I/O index from
+                   0x300 in 0x20 steps, 0x200 upwards from 8; 12-14 IRQ index
+                   3,4,5,9,10,11,12,15), 5 bit 0 an 8-bit slot, 6 the model
+                   and a checksum over words 1-3 and 6 (0xFF); 0x7F high byte
+                   the media (5 UTP, 6 BNC, 1-4 autodetect combinations).
+   Page 0 register 1 reads 0xFF: WTREND's "TE-16XP/T (old)" (the RTL8019AS
+   of the TE-16PT reads 0x00 there). */
+enum { XP_EE_IDLE, XP_EE_CMD, XP_EE_READ, XP_EE_SKIP };
+
+static uint8_t
+te16xp_read(nic_t *dev, int off)
+{
+    if ((off >= 0x14) && (off <= 0x1b))
+        return dev->xp_prom[off - 0x14];
+    if (off == 0x1e)
+        return dev->xp_ee_do;
+    return 0xff;
+}
+
+static void
+te16xp_ee_write(nic_t *dev, uint8_t val)
+{
+    int sel = !!(val & 0x08);
+    int sk = !!(val & 0x04);
+    int di = !!(val & 0x02);
+
+    if (!sel) {
+        dev->xp_ee_state = XP_EE_IDLE;
+        dev->xp_ee_do    = 1;
+    } else if (sk && !dev->xp_ee_sk) {
+        switch (dev->xp_ee_state) {
+            case XP_EE_IDLE: /* leading zeros, then the start bit */
+                if (di) {
+                    dev->xp_ee_state = XP_EE_CMD;
+                    dev->xp_ee_bits  = 0;
+                    dev->xp_ee_shift = 0;
+                }
+                break;
+            case XP_EE_CMD: /* 2 opcode bits, 8 address bits */
+                dev->xp_ee_shift = (dev->xp_ee_shift << 1) | di;
+                if (++dev->xp_ee_bits == 10) {
+                    if ((dev->xp_ee_shift >> 8) == 2) {
+                        dev->xp_ee_state = XP_EE_READ;
+                        dev->xp_ee_shift = dev->xp_ee[dev->xp_ee_shift & 0x7f];
+                        dev->xp_ee_do    = 0; /* the dummy 0 */
+                    } else
+                        dev->xp_ee_state = XP_EE_SKIP;
+                }
+                break;
+            case XP_EE_READ:
+                dev->xp_ee_do = (dev->xp_ee_shift >> 15) & 1;
+                dev->xp_ee_shift <<= 1;
+                break;
+            default:
+                break;
+        }
+    }
+    dev->xp_ee_sk = sk;
+}
+
+static void
+te16xp_setup(nic_t *dev)
+{
+    static const uint8_t irqs[8] = { 3, 4, 5, 9, 10, 11, 12, 15 };
+    int     io_idx  = (dev->base_address >= 0x300) ? ((dev->base_address - 0x300) >> 5) :
+                                                     (8 + ((dev->base_address - 0x200) >> 5));
+    int     irq_idx = 5;
+    uint8_t sum     = 0;
+
+    for (int i = 0; i < 8; i++)
+        if (irqs[i] == dev->base_irq)
+            irq_idx = i;
+
+    memcpy(dev->xp_prom, dev->maclocal, 6);
+    dev->xp_prom[6] = 0x65;
+    for (int i = 0; i < 7; i++)
+        sum += dev->xp_prom[i];
+    dev->xp_prom[7] = 0xff - sum;
+
+    memset(dev->xp_ee, 0, sizeof(dev->xp_ee));
+    dev->xp_ee[0] = 0x118b;
+    for (int i = 0; i < 3; i++)
+        dev->xp_ee[1 + i] = dev->maclocal[2 * i] | (dev->maclocal[2 * i + 1] << 8);
+    dev->xp_ee[4] = 0x0001 | ((io_idx & 0x0f) << 8) | (irq_idx << 12);
+    dev->xp_ee[6] = dev->xp_prom[6] | (dev->xp_prom[7] << 8);
+    dev->xp_ee[0x7f] = 0x0500; /* media: UTP only -- autodetection finds no link
+                                  and falls back to BNC */
+    dev->xp_ee_do = 1;
+}
+
 static uint32_t
 nic_read(nic_t *dev, uint32_t addr, unsigned len)
 {
@@ -545,7 +654,11 @@ nic_read(nic_t *dev, uint32_t addr, unsigned len)
 
     nelog(3, "%s: read addr %x, len %d\n", dev->name, addr, len);
 
-    if (off >= 0x10)
+    if (dev->te16xp && (off >= 0x14) && (off <= 0x1e))
+        retval = te16xp_read(dev, off);
+    else if (dev->te16xp && (off == 0x01) && (dev->dp8390->CR.pgsel == 0x00))
+        retval = 0xff;
+    else if (off >= 0x10)
         retval = asic_read(dev, off - 0x10, len);
     else if (off == 0x00)
         retval = dp8390_read_cr(dev->dp8390);
@@ -601,7 +714,10 @@ nic_write(nic_t *dev, uint32_t addr, uint32_t val, unsigned len)
        the low 16 bytes are for the DS8390, with the current
        page being selected by the PS0,PS1 registers in the
        command register */
-    if (off >= 0x10)
+    if (dev->te16xp && (off >= 0x14) && (off <= 0x1e)) {
+        if (off == 0x1e)
+            te16xp_ee_write(dev, val);
+    } else if (off >= 0x10)
         asic_write(dev, off - 0x10, val, len);
     else if (off == 0x00)
         dp8390_write_cr(dev->dp8390, val);
@@ -1104,8 +1220,14 @@ nic_init(const device_t *info)
     dev = calloc(1, sizeof(nic_t));
     dev->name  = info->name;
     dev->board = info->local;
+    dev->te16xp = (info == &te16xp_device);
 
-    if (dev->board >= NE2K_RTL8019AS_PNP) {
+    if (dev->te16xp) {
+        dev->base_address = 0x340;
+        dev->base_irq     = device_get_config_int("irq");
+        dev->bios_addr    = 0x00000;
+        dev->has_bios     = 0;
+    } else if (dev->board >= NE2K_RTL8019AS_PNP) {
         dev->base_address = 0x340;
         dev->base_irq     = 12;
         if (dev->board == NE2K_RTL8029AS) {
@@ -1263,6 +1385,13 @@ nic_init(const device_t *info)
             dev->maclocal[1] = (mac_oui >> 8) & 0xff;
             dev->maclocal[2] = (mac_oui & 0xff);
         }
+    }
+
+    if (dev->te16xp) {
+        dev->maclocal[0] = 0x00; /* 00:80:C8 (D-Link OID: the chip is D-Link's, PnP ID DLK2201) */
+        dev->maclocal[1] = 0x80;
+        dev->maclocal[2] = 0xC8;
+        te16xp_setup(dev);
     }
 
     memcpy(dev->dp8390->physaddr, dev->maclocal, sizeof(dev->maclocal));
@@ -1428,6 +1557,9 @@ nic_init(const device_t *info)
         int inst               = device_get_instance();
         snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, inst);
         dev->eeprom            = device_add_inst_params(&nmc93cxx_device, inst, &params);
+        /* MegaPPBox: the configured MAC (the image's) over the one the saved
+           EEPROM was first made with -- see net_rtl8139.c. */
+        memcpy(&((uint8_t *) nmc93cxx_eeprom_data(dev->eeprom))[0x04], dev->maclocal, 6);
 
         if (info->local == NE2K_RTL8019AS_PNP) {
             const uint8_t *data = (const uint8_t *) nmc93cxx_eeprom_data(dev->eeprom);
@@ -2092,6 +2224,22 @@ const device_t te16pt_device = {
     .close         = nic_close,
     .reset         = nic_config_reset,
     .available     = rtl8019as_available,
+    .speed_changed = NULL,
+    .force_redraw  = NULL,
+    .config        = te16pt_config
+};
+
+/* MegaPPBox: the "old" ISA card of the DOS MAXX releases (see te16xp_read):
+   what MAXX 2K V4.00/V4.01 need, and what the later releases also drive. */
+const device_t te16xp_device = {
+    .name          = "TRENDnet TE-16XP",
+    .internal_name = "te16xp",
+    .flags         = DEVICE_ISA16,
+    .local         = NE2K_NE2000,
+    .init          = nic_init,
+    .close         = nic_close,
+    .reset         = NULL,
+    .available     = NULL,
     .speed_changed = NULL,
     .force_redraw  = NULL,
     .config        = te16pt_config

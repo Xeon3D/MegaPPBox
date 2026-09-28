@@ -3311,6 +3311,13 @@ nic_init(const device_t *info)
     params.filename        = filename;
     snprintf(filename, sizeof(filename), "nmc93cxx_eeprom_%s_%d.nvr", info->internal_name, s->inst);
     s->eeprom = device_add_inst_params(&nmc93cxx_device, s->inst, &params);
+    /* MegaPPBox: the EEPROM saved in nvr\ keeps the MAC it was first made
+       with, while the configured one is the image's (Network dialog, per
+       image).  The guest reads its address from the EEPROM and the switch
+       filters on the configured one, so unless they agree every frame sent
+       to the guest is dropped and only broadcasts arrive (Mega-Link invites
+       flash up and fall back to the menu).  The configured MAC wins. */
+    memcpy((uint8_t *) &((uint16_t *) nmc93cxx_eeprom_data(s->eeprom))[7], mac_bytes, 6);
 
     s->nic = network_attach(s, (uint8_t *) &s->phys[MAC0], rtl8139_do_receive, rtl8139_set_link_status);
     timer_add(&s->timer, rtl8139_timer, s, 0);

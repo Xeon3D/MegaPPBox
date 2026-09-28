@@ -258,6 +258,9 @@ extern const device_t rtl8139c_plus_device;
 /* TRENDnet TE-16PT (RTL8019AS, ISA, jumperless at 0x340) */
 extern const device_t te16pt_device;
 
+/* TRENDnet TE-16XP (NE2000 + D-Link EEPROM/ID PROM, jumperless at 0x340) */
+extern const device_t te16xp_device;
+
 /* Intel 8255x */
 extern const device_t i82557_device;
 extern const device_t i82558_device;
