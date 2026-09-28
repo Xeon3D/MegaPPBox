@@ -365,16 +365,21 @@ mtouch_prepare_transmit(void *priv)
         return 0;
     }
     
+    /* MegaPPBox: bit 3 of a tablet status byte marks the 5-byte report.  3M's
+       TouchWare driver of 2002 (TWDrv.o in MAXX Ruby 2 V11.00) reads a clear
+       bit 3 as the 11-byte "double touch" report, waits for 11 bytes that never
+       come and drops every touch; the 2003 driver calls a report a double touch
+       only when bits 4:3 are 10, so both take 0xC8/0x88. */
     if (dev->format == FORMAT_TABLET) {
         if (but) { /* Touchdown/Continuation */
-            fifo8_push(&dev->resp, 0b11000000 | ((dev->pen_mode == 2) ? ((1 << 5) | ((but & 3))) : 0));
+            fifo8_push(&dev->resp, 0b11001000 | ((dev->pen_mode == 2) ? ((1 << 5) | ((but & 3))) : 0));
             fifo8_push(&dev->resp, (uint16_t)(16383 * abs_x) & 0b1111111);
             fifo8_push(&dev->resp, ((uint16_t)(16383 * abs_x) >> 7) & 0b1111111);
             fifo8_push(&dev->resp, (uint16_t)(16383 * (1 - abs_y)) & 0b1111111);
             fifo8_push(&dev->resp, ((uint16_t)(16383 * (1 - abs_y)) >> 7) & 0b1111111);
         } 
         else if (dev->but_old) { /* Liftoff */
-            fifo8_push(&dev->resp, 0b10000000 | ((dev->pen_mode == 2) ? ((1 << 5)) : 0));
+            fifo8_push(&dev->resp, 0b10001000 | ((dev->pen_mode == 2) ? ((1 << 5)) : 0));
             fifo8_push(&dev->resp, (uint16_t)(16383 * dev->abs_x_old) & 0b1111111);
             fifo8_push(&dev->resp, ((uint16_t)(16383 * dev->abs_x_old) >> 7) & 0b1111111);
             fifo8_push(&dev->resp, (uint16_t)(16383 * (1 - dev->abs_y_old)) & 0b1111111);
