@@ -184,10 +184,11 @@ include_directories(${FREETYPE_INCLUDE_DIRS})
 if(FREETYPE_INCLUDE_DIR_ft2build)
     include_directories(${FREETYPE_INCLUDE_DIR_ft2build})
 endif()
-if(NOT WIN32)
+if(NOT WIN32 OR NOT STATIC_BUILD)
     # The on-screen display (imgui_freetype) calls FreeType directly; upstream got
     # it on Linux through the SDL front end, which MegaPPBox does not have.  On
-    # macOS linking it also copies it into the bundle.  (Windows: static Qt.)
+    # macOS linking it also copies it into the bundle.  (Windows static: static Qt
+    # brings it; a shared Qt - a Qt 6 build - does not.)
     target_link_libraries(86Box Freetype::Freetype)
 endif()
 

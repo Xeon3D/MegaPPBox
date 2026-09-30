@@ -1171,6 +1171,19 @@ hdd_preset_apply(int hdd_id)
 
     hd->num_zones = preset->zones;
 
+    /* MegaPPBox: the Merit presets carry an identity and a cache but no geometry
+       (zones, heads, avg_spt all 0): they get no zone table, and seeks take
+       hdd_seek_get_time()'s fixed time for a drive without zones - as they always
+       have.  The geometry below divides by those zeros; with the integer division by
+       the zone count, clang assumes zones != 0 and runs the zone loops anyway, off the
+       end of the array (seen on arm64; macOS builds with clang).  GCC on Windows
+       happened not to. */
+    if (!preset->zones) {
+        hdd_zones_init(hd);
+        hdd_cache_init(hd);
+        return;
+    }
+
     disk_sectors        = hd->tracks * hd->hpc * hd->spt;
     sectors_per_surface = (uint32_t) ceil((double) disk_sectors / (double) hd->phy_heads);
     cylinders           = (uint32_t) ceil((double) sectors_per_surface / (double) preset->avg_spt);
