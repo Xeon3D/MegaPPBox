@@ -490,16 +490,27 @@ mt_apply_machine(const mt_profile_t *p)
     if (machine < 0)
         fatal("MegaPPBox: the %s machine is missing from this build\n", machine_nm);
 
-    cpu_f = cpu_get_family(p->cpu_family);
+    /* Test runs: MEGAPPBOX_CPU=<family>:<Hz> replaces the profile's CPU. */
+    char        family[64];
+    const char *cpu_family = p->cpu_family;
+    uint32_t    cpu_speed  = p->cpu_speed;
+    const char *t          = mt_testenv("MEGAPPBOX_CPU");
+    if (t && strchr(t, ':') && ((strchr(t, ':') - t) < (int) sizeof(family))) {
+        snprintf(family, sizeof(family), "%.*s", (int) (strchr(t, ':') - t), t);
+        cpu_family = family;
+        cpu_speed  = (uint32_t) strtoul(strchr(t, ':') + 1, NULL, 10);
+    }
+
+    cpu_f = cpu_get_family(cpu_family);
     if (cpu_f == NULL)
-        fatal("MegaPPBox: the %s CPU family is missing from this build\n", p->cpu_family);
+        fatal("MegaPPBox: the %s CPU family is missing from this build\n", cpu_family);
 
     /* Pick the part by speed, not by index, so the table can grow. */
     cpu = 0;
-    while (cpu_f->cpus[cpu].cpu_type && (cpu_f->cpus[cpu].rspeed != (uint32_t) p->cpu_speed))
+    while (cpu_f->cpus[cpu].cpu_type && (cpu_f->cpus[cpu].rspeed != cpu_speed))
         cpu++;
     if (!cpu_f->cpus[cpu].cpu_type)
-        fatal("MegaPPBox: no %d Hz part in the %s family\n", p->cpu_speed, p->cpu_family);
+        fatal("MegaPPBox: no %u Hz part in the %s family\n", cpu_speed, cpu_family);
     cpu_s = (CPU *) &cpu_f->cpus[cpu];
 
     fpu_type                 = fpu_get_type(cpu_f, cpu, "internal");
@@ -527,7 +538,9 @@ mt_apply_video_sound(const mt_profile_t *p)
     for (int i = 1; i < GFXCARD_MAX; i++)
         gfxcard[i] = 0;
 
-    sound_card_current[0] = sound_card_get_from_internal_name((char *) p->sndcard);
+    /* Test runs: MEGAPPBOX_SOUND=<internal name> replaces the profile's sound card. */
+    sound_card_current[0] = sound_card_get_from_internal_name(
+        (char *) (mt_testenv("MEGAPPBOX_SOUND") ? mt_testenv("MEGAPPBOX_SOUND") : p->sndcard));
     for (int i = 1; i < SOUND_CARD_MAX; i++)
         sound_card_current[i] = 0;
     sound_gain = p->sound_gain;

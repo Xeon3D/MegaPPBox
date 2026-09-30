@@ -23,6 +23,9 @@
 #include <86box/fifo8.h>
 #include <86box/video.h>
 #include <86box/nvr.h>
+#include <86box/plat.h>
+#include <86box/path.h>
+#include "cpu.h"
 
 extern void *mtouch_init(const device_t *info);
 extern void  mtouch_close(void *priv);
@@ -43,6 +46,25 @@ static int        out_len;
 static int        g_but, g_pressed, g_identity = 3;
 static double     g_x = 0.5, g_y = 0.5;
 static char       nvr_dir[] = "build";
+
+/* What the touch diagnostics (MEGAPPBOX_TOUCH_TRACE, unset here) link against. */
+cpu_state_t cpu_state;
+uint32_t    cr3;
+uint64_t    tsc;
+double      cpuclock;
+uint8_t    *ram;
+uint32_t    mem_size;
+double      mouse_x_abs, mouse_y_abs;
+uint32_t    pic_trace_count[16];
+char        usr_path[1024];
+int         tablet_trace_marks;
+
+uint32_t plat_get_ticks(void) { return 0; }
+void     path_append_filename(char *dest, const char *s1, const char *s2) { sprintf(dest, "%s/%s", s1, s2); }
+void     tablet_get_trace(int *seq, uint32_t *press_ms, uint32_t *release_ms) { *seq = 0; *press_ms = *release_ms = 0; }
+int      tablet_get_marks(void) { return 0; }
+void     mouse_set_buttons_ex(int b) { (void) b; }
+int      fifo_get_empty(void *priv) { (void) priv; return 1; }
 
 #define MAX_TIMERS 8
 static pc_timer_t *timers[MAX_TIMERS];

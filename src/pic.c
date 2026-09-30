@@ -1014,6 +1014,8 @@ pic_irq_ack(void)
     return ret;
 }
 
+uint32_t pic_trace_count[16]; /* MegaPPBox touch trace: interrupts acknowledged per IRQ */
+
 int
 picinterrupt(void)
 {
@@ -1046,6 +1048,11 @@ picinterrupt(void)
        EISA BIOS that tests for one said so at POST. */
     if ((pic.interrupt == 0) && (pit_ps2_watchdog != NULL) && (pit_devs[1].data == pit_ps2_watchdog))
         pit_devs[1].set_gate(pit_devs[1].data, 0, 0);
+
+    if (pic.interrupt & 0x40)
+        pic_trace_count[8 | (pic.slaves[pic.interrupt & 7]->interrupt & 7)]++;
+    else
+        pic_trace_count[pic.interrupt & 7]++;
 
     /* Two ACK's - do them in a loop to avoid potential compiler misoptimizations. */
     for (uint8_t i = 0; i < 2; i++) {

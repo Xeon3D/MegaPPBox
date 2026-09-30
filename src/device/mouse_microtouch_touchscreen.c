@@ -42,6 +42,9 @@
 #include <86box/fifo.h>
 #include <86box/video.h>
 #include <86box/nvr.h>
+#include <86box/path.h>
+#include <stddef.h>
+#include "cpu.h"
 
 /* NOVRAM: 0-15 calibration (4 floats); 16 on: the settings Parameter Lock,
    Parameter Set and Sensitivity Set store (older 16-byte files load as defaults). */
@@ -86,6 +89,20 @@ enum mtouch_cal {
     CAL_INTERACTIVE /* CI: corners, no range check, swaps reversed points */
 };
 
+#define TT_WAIT_MS 800 /* a line is written this long after the release, or at the next press */
+
+typedef struct mtouch_trace_t {
+    FILE    *fp;
+    int      seq, n, marks;
+    int      active, seen, lifted, read, lost, check;
+    uint32_t h_press, h_release, h_seen, h_lift, check_at;
+    uint32_t prev_press, prev_release; /* the previous click, host ms (0: none) */
+    double   g_seen, g_lift, g_read;
+    int      reports, x, y;
+    double   x0, y0, wander; /* guest pixels the touch moved from its touchdown */
+    int      rsr_busy;       /* times a byte had to wait for the UART (would have been overwritten) */
+} mtouch_trace_t;
+
 static const char *mtouch_identity[] = {
     "A30100", /* SMT2 Serial / SMT3(R)V */
     "A40100", /* SMT2 PCBus */
@@ -117,12 +134,625 @@ typedef struct mouse_microtouch_t {
     uint8_t     *nvr;
     char         nvr_path[64];
     serial_t    *serial;
+    mtouch_trace_t *tt;
     Fifo8        resp;
     pc_timer_t   host_to_serial_timer;
     pc_timer_t   reset_timer;
 } mouse_microtouch_t;
 
 static mouse_microtouch_t *mtouch_inst = NULL;
+
+extern double mouse_x_abs, mouse_y_abs;
+extern uint8_t *ram;
+extern uint32_t pic_trace_count[16];
+
+/* twring: 3M TWDrv's event ring in guest RAM (256 entries of 10 bytes:
+   flags, 0, x16, y16, 0, 0, 0, id; flags 01 = button event, 08 = down, 80 = read
+   by a process).  The write index byte follows the ring at +0xa01. */
+static uint32_t tw_ring;      /* kernel virtual address of entry 0, 0 = not found */
+static int      tw_ring_dump; /* entries to log before each scripted press */
+static uint32_t tw_pgdir = 0x00101000; /* swapper_pg_dir (Crown's System.map), physical */
+
+/* Guest kernel virtual -> physical through the kernel page tables (no PAE). */
+static int
+gv_phys(uint32_t va, uint32_t *pa)
+{
+    uint32_t lim = mem_size * 1024, pde, pte;
+
+    if ((tw_pgdir + 4096) > lim)
+        return 0;
+    pde = *(uint32_t *) &ram[tw_pgdir + (va >> 22) * 4];
+    if (!(pde & 1))
+        return 0;
+    if (pde & 0x80) { /* 4 MB page */
+        *pa = (pde & 0xffc00000) | (va & 0x3fffff);
+        return *pa < lim;
+    }
+    if (((pde & ~0xfff) + 4096) > lim)
+        return 0;
+    pte = *(uint32_t *) &ram[(pde & ~0xfff) + ((va >> 12) & 0x3ff) * 4];
+    if (!(pte & 1))
+        return 0;
+    *pa = (pte & ~0xfff) | (va & 0xfff);
+    return *pa < lim;
+}
+
+static int
+gv_byte(uint32_t va, uint8_t *b)
+{
+    uint32_t pa;
+
+    if (!gv_phys(va, &pa))
+        return 0;
+    *b = ram[pa];
+    return 1;
+}
+
+static int
+gv_read(uint32_t va, uint8_t *out, int n)
+{
+    for (int i = 0; i < n; i++)
+        if (!gv_byte(va + i, &out[i]))
+            return 0;
+    return 1;
+}
+
+static int
+tw_entry_ok(const uint8_t *e)
+{
+    return !e[1] && !e[6] && !e[7] && !e[8] && !(e[0] & 0x74);
+}
+
+static void
+tw_ring_find(FILE *log)
+{
+    static uint8_t buf[0x800000];
+    uint32_t       base = 0xc4800000, len = sizeof(buf), mapped = 0;
+    int            found = 0;
+
+    tw_ring = 0;
+    /* copy the start of the vmalloc area (modules live there) into buf */
+    for (uint32_t off = 0; off < len; off += 4096) {
+        uint32_t pa;
+        if (gv_phys(base + off, &pa) && ((pa & ~0xfff) + 4096) <= mem_size * 1024) {
+            memcpy(&buf[off], &ram[pa & ~0xfff], 4096);
+            mapped++;
+        } else
+            memset(&buf[off], 0xff, 4096);
+    }
+    fprintf(log, "      TWRING: %u pages mapped in %08x-%08x\n", mapped, base, base + len);
+    for (uint32_t a = 0; (a + 0xa40 + 48) <= len; a += 2) {
+        int ok = 1, events = 0;
+        for (int i = 0; i < 256 && ok; i++) {
+            const uint8_t *e = &buf[a + i * 10];
+            ok = tw_entry_ok(e);
+            events += ((e[0] & 0x81) == 0x81) && (e[2] | e[3] | e[4] | e[5]);
+        }
+        if (ok && events >= 4) {
+            /* the scan can start early on zero bytes: entry 0 is the first non-empty one */
+            uint32_t r = a, used = 0;
+            while ((r < a + 20) && !(buf[r] | buf[r + 2] | buf[r + 3] | buf[r + 4] | buf[r + 5]))
+                r += 2;
+            for (int i = 0; i < 256; i++)
+                used += (buf[r + i * 10] | buf[r + i * 10 + 2] | buf[r + i * 10 + 4]) != 0;
+            fprintf(log, "      TWRING candidate at %08x (scan %08x): %d read button events, %u entries used, byte at +0xa01 = %u\n",
+                    base + r, base + a, events, used, buf[r + 0xa01]);
+            fprintf(log, "        +0x9f0:");
+            for (int i = 0x9f0; i < 0xa60; i++)
+                fprintf(log, "%s%02x", (i % 16) ? " " : "\n          ", buf[r + i]);
+            fprintf(log, "\n        entries 0-7:");
+            for (int i = 0; i < 8; i++)
+                fprintf(log, " [%02x %u,%u id %02x]", buf[r + i * 10], buf[r + i * 10 + 2] | (buf[r + i * 10 + 3] << 8),
+                        buf[r + i * 10 + 4] | (buf[r + i * 10 + 5] << 8), buf[r + i * 10 + 9]);
+            fprintf(log, "\n");
+            /* entry 0 is the first touchdown ever written */
+            while ((r < a + 60) && ((buf[r] & 0x09) != 0x09))
+                r += 10;
+            fprintf(log, "        ring starts at %08x, write index %u, readers pid %u idx %u, pid %u idx %u\n", base + r,
+                    buf[r + 0xa01], *(uint32_t *) &buf[r + 0xa20], buf[r + 0xa28], *(uint32_t *) &buf[r + 0xa2c], buf[r + 0xa34]);
+            if (!found++)
+                tw_ring = base + r;
+            a += 2560;
+        }
+    }
+    if (!found)
+        fprintf(log, "      TWRING: not found\n");
+    fflush(log);
+}
+
+static void
+tw_ring_log(FILE *log, int n)
+{
+    uint8_t w, e[10], rd[4];
+
+    if (!tw_ring || !gv_byte(tw_ring + 0xa01, &w))
+        return;
+    /* per-process read positions: table at bss+0xa40 (= ring+0xa20), 12 bytes each, index at +8 */
+    for (int i = 0; i < 4; i++)
+        if (!gv_byte(tw_ring + 0xa20 + i * 12 + 8, &rd[i]))
+            rd[i] = 0xff;
+    fprintf(log, "      TWRING w=%3u read=%u,%u,%u,%u:", w, rd[0], rd[1], rd[2], rd[3]);
+    for (int i = n; i > 0; i--) {
+        if (!gv_read(tw_ring + ((uint8_t) (w - i)) * 10, e, 10))
+            continue;
+        fprintf(log, " [%s%s%s %u,%u]", (e[0] & 0x80) ? "r" : "-", (e[0] & 0x01) ? ((e[0] & 0x08) ? "DN" : "UP") : "mv",
+                (e[0] & 0x02) ? "R" : "", e[2] | (e[3] << 8), e[4] | (e[5] << 8));
+    }
+    fprintf(log, "\n");
+    fflush(log);
+}
+
+/* irqrate: interrupts acknowledged per IRQ over a window */
+static struct {
+    uint32_t   start[16];
+    double     g0;
+    pc_timer_t timer;
+    FILE      *log;
+} irq_rt;
+
+static double tt_guest_ms(void);
+
+static void
+irq_rate_done(UNUSED(void *priv))
+{
+    double secs = (tt_guest_ms() - irq_rt.g0) / 1000.;
+
+    fprintf(irq_rt.log, "      IRQRATE over %.1f guest s (per second):", secs);
+    for (int i = 0; i < 16; i++)
+        if (pic_trace_count[i] != irq_rt.start[i])
+            fprintf(irq_rt.log, " IRQ%d=%.1f", i, (pic_trace_count[i] - irq_rt.start[i]) / secs);
+    fprintf(irq_rt.log, "\n");
+    fflush(irq_rt.log);
+}
+
+#define SMP_BIN 50
+#define SMP_MAX 2000
+#define SMP_TOP 64
+static struct {
+    int        ms, left, t;
+    int        bin[SMP_MAX / SMP_BIN][3]; /* idle, kernel, user */
+    uint32_t   cr3[SMP_TOP], kpg[SMP_TOP];
+    int        cr3n[SMP_TOP], kpgn[SMP_TOP];
+    pc_timer_t timer;
+    FILE      *log;
+} smp;
+
+static void
+smp_count(uint32_t *keys, int *counts, uint32_t k)
+{
+    for (int i = 0; i < SMP_TOP; i++) {
+        if (counts[i] && (keys[i] == k)) {
+            counts[i]++;
+            return;
+        }
+        if (!counts[i]) {
+            keys[i]   = k;
+            counts[i] = 1;
+            return;
+        }
+    }
+}
+
+static void
+smp_top(FILE *log, const char *what, uint32_t *keys, int *counts)
+{
+    fprintf(log, "        %s:", what);
+    for (int n = 0; n < 5; n++) {
+        int best = -1;
+        for (int i = 0; i < SMP_TOP; i++)
+            if (counts[i] > 0 && (best < 0 || counts[i] > counts[best]))
+                best = i;
+        if (best < 0)
+            break;
+        fprintf(log, " %08x x%d", keys[best], counts[best]);
+        counts[best] = -counts[best];
+    }
+    for (int i = 0; i < SMP_TOP; i++)
+        if (counts[i] < 0)
+            counts[i] = -counts[i];
+    fprintf(log, "\n");
+}
+
+static void
+smp_tick(UNUSED(void *priv))
+{
+    int      b    = smp.t / SMP_BIN;
+    uint32_t lin  = cpu_state.seg_cs.base + cpu_state.pc;
+
+    if (CPL == 0) {
+        uint32_t ph = lin - 0xc0000000;
+        int      halted = (ph >= 1) && (ph < mem_size * 1024) && ((ram[ph] == 0xf4) || (ram[ph - 1] == 0xf4));
+
+        smp.bin[b][halted ? 0 : 1]++;
+        if (!halted)
+            smp_count(smp.kpg, smp.kpgn, lin & ~0xff);
+    } else {
+        smp.bin[b][2]++;
+        smp_count(smp.cr3, smp.cr3n, cr3);
+    }
+    smp.t++;
+    if (--smp.left > 0) {
+        timer_on_auto(&smp.timer, 1000.);
+        return;
+    }
+    fprintf(smp.log, "      SAMPLE %d ms after the press, per %d ms (idle/kernel/user %%):", smp.t, SMP_BIN);
+    for (int i = 0; i * SMP_BIN < smp.t; i++) {
+        int n = smp.bin[i][0] + smp.bin[i][1] + smp.bin[i][2];
+        if (n)
+            fprintf(smp.log, " %d/%d/%d", smp.bin[i][0] * 100 / n, smp.bin[i][1] * 100 / n, smp.bin[i][2] * 100 / n);
+    }
+    fprintf(smp.log, "\n");
+    smp_top(smp.log, "user cr3", smp.cr3, smp.cr3n);
+    smp_top(smp.log, "kernel eip/256", smp.kpg, smp.kpgn);
+    fflush(smp.log);
+}
+
+static void
+smp_start(FILE *log)
+{
+    if (smp.ms <= 0)
+        return;
+    int ms = smp.ms;
+    pc_timer_t t = smp.timer;
+    memset(&smp, 0, sizeof(smp));
+    smp.timer = t;
+    smp.ms    = ms;
+    smp.left  = (ms > SMP_MAX) ? SMP_MAX : ms;
+    smp.log   = log;
+    timer_on_auto(&smp.timer, 1000.);
+}
+static double tt_guest_ms(void);
+
+/* MegaPPBox touch trace: scripted touches for testing, read from touchcmd.txt
+   in the VM folder (the file is deleted once read).  Positions are percent of
+   the guest screen; times are host ms.
+       tap X Y HOLD
+       cycle PERIOD HOLD COUNT X1 Y1 [X2 Y2 ...]   (COUNT 0 = until stop)
+       stop
+       probe GX GY        (guest pixel; before each scripted tap, and one period
+                           after the last, the log lists the probes that are
+                           yellow -- a selected tile's frame)
+       probe clear
+       jitter PX          (while a scripted touch is held, it wanders up to PX
+                           guest pixels from its point; 0 = still)
+       twparams           (find 3M TWDrv's settings block in guest RAM and log
+                           it: TouchMode, TouchRange, ... TouchEnable)
+       sample MS          (after each scripted press, sample the guest CPU every
+                           1 ms for MS ms: idle (HLT) / kernel / user per 50 ms,
+                           and the busiest user page tables and kernel pages)
+       seq HOLD D1 X1 Y1 D2 X2 Y2 ...   (touch k presses Dk ms after touch
+                           k-1 was released -- D1 after now; probes are logged
+                           before each touch and 1500 ms after the last)    */
+#define TA_PTS 16
+static struct {
+    int      on, down, n, idx, count, done;
+    uint32_t period, hold, next, up, check;
+    double   x[TA_PTS], y[TA_PTS];
+    int      nprobe, px[TA_PTS], py[TA_PTS], final, jitter;
+    int      watch;      /* probe to watch after the current tap, -1 = none */
+    int      seq;        /* seq command: delays are counted from the release */
+    uint32_t delay[TA_PTS];
+    uint32_t watch_from; /* host ms of that tap's press */
+    double   watch_g;    /* guest ms of that tap's press */
+} ta;
+
+static int
+ta_probe_yellow(int i)
+{
+    const monitor_t *m = &monitors[0];
+    const bitmap_t  *b = m->target_buffer;
+    int              x = m->mon_overscan_x / 2 + ta.px[i], y = m->mon_overscan_y / 2 + ta.py[i];
+
+    if (!b || (x >= b->w) || (y >= b->h) || (y >= 2112))
+        return 0;
+    uint32_t c = b->line[y][x];
+    return (((c >> 16) & 0xff) > 200) && (((c >> 8) & 0xff) > 200) && ((c & 0xff) < 80);
+}
+
+static void
+ta_log_probes(FILE *log, const char *when)
+{
+    const monitor_t *m = &monitors[0];
+    const bitmap_t  *b = m->target_buffer;
+    int              ox = m->mon_overscan_x / 2, oy = m->mon_overscan_y / 2;
+    char             buf[128] = "";
+
+    if (!ta.nprobe)
+        return;
+    for (int i = 0; i < ta.nprobe; i++) {
+        int x = ox + ta.px[i], y = oy + ta.py[i];
+
+        if (!b || (x >= b->w) || (y >= b->h) || (y >= 2112))
+            continue;
+        uint32_t c = b->line[y][x];
+        if ((((c >> 16) & 0xff) > 200) && (((c >> 8) & 0xff) > 200) && ((c & 0xff) < 80))
+            snprintf(buf + strlen(buf), sizeof(buf) - strlen(buf), " %d", i);
+    }
+    fprintf(log, "      PROBE %s: yellow%s\n", when, buf[0] ? buf : " none");
+    fflush(log);
+}
+
+static void
+ta_command(FILE *log, char *line)
+{
+    char  *tok[3 + 2 * TA_PTS + 1];
+    int    n = 0;
+
+    for (char *t = strtok(line, " \t\r\n"); t && (n < (int) (sizeof(tok) / sizeof(tok[0]))); t = strtok(NULL, " \t\r\n"))
+        tok[n++] = t;
+    if (!n)
+        return;
+    if (!strcmp(tok[0], "probe") && (n >= 2)) {
+        if (!strcmp(tok[1], "clear"))
+            ta.nprobe = 0;
+        else if ((n >= 3) && (ta.nprobe < TA_PTS)) {
+            ta.px[ta.nprobe] = atoi(tok[1]);
+            ta.py[ta.nprobe] = atoi(tok[2]);
+            ta.nprobe++;
+        }
+        return;
+    }
+    if (!strcmp(tok[0], "twring")) {
+        tw_ring_find(log);
+        tw_ring_dump = (n >= 2) ? atoi(tok[1]) : 0;
+        return;
+    }
+    if (!strcmp(tok[0], "irqrate") && (n >= 2)) {
+        memcpy(irq_rt.start, pic_trace_count, sizeof(irq_rt.start));
+        irq_rt.g0  = tt_guest_ms();
+        irq_rt.log = log;
+        timer_on_auto(&irq_rt.timer, atoi(tok[1]) * 1000.);
+        return;
+    }
+    if (!strcmp(tok[0], "sample") && (n >= 2)) {
+        smp.ms = atoi(tok[1]);
+        fprintf(log, "      CMD sample %d\n", smp.ms);
+        fflush(log);
+        return;
+    }
+    if (!strcmp(tok[0], "twparams")) {
+        static const char *names[20] = { "TouchMode", "TouchRange", "VertOffEn", "VertOffset", "HorizOffEn",
+                                         "XIsHoriz", "FlipX", "FlipY", "DoubleClickTime", "DoubleClickDist",
+                                         "SteadyTime", "LiftoffTimeout", "TdFlashTime", "LoFlashTime",
+                                         "SwapButton", "BeepTd", "BeepLo", "BeepFreq", "BeepMs", "TouchEnable" };
+        int hits = 0;
+
+        for (uint32_t a = 0; (a + 80) <= (mem_size * 1024) && hits < 8; a += 4) {
+            const uint32_t *w = (const uint32_t *) &ram[a];
+            /* TouchMode <= 6, flags 0/1, BeepFreq <= 5000, BeepMs <= 5000, TouchEnable 0/1,
+               DoubleClickDist <= 1280, times <= 50, and a plausible TouchRange. */
+            if ((w[0] <= 6) && (w[1] <= 256) && (w[1] > 0) && (w[4] <= 1) && (w[5] <= 1) && (w[6] <= 1) &&
+                (w[7] <= 1) && (w[8] <= 50) && (w[9] <= 1280) && (w[9] > 0) && (w[10] <= 50) && (w[11] <= 50) &&
+                (w[12] <= 50) && (w[13] <= 50) && (w[14] <= 1) && (w[15] <= 1) && (w[16] <= 1) &&
+                (w[17] >= 100) && (w[17] <= 5000) && (w[18] <= 5000) && (w[19] <= 1)) {
+                fprintf(log, "      TWPARAMS at %08x:", a);
+                for (int i = 0; i < 20; i++)
+                    fprintf(log, " %s=%u", names[i], w[i]);
+                fprintf(log, "\n");
+                hits++;
+            }
+        }
+        if (!hits)
+            fprintf(log, "      TWPARAMS: not found\n");
+        fflush(log);
+        return;
+    }
+    if (!strcmp(tok[0], "jitter") && (n >= 2)) {
+        ta.jitter = atoi(tok[1]);
+        fprintf(log, "      CMD jitter %d\n", ta.jitter);
+        fflush(log);
+        return;
+    }
+    if (!strcmp(tok[0], "stop")) {
+        ta.on = 0;
+        if (ta.down)
+            mouse_set_buttons_ex(0);
+        ta.down = 0;
+    } else if (!strcmp(tok[0], "tap") && (n >= 4)) {
+        memset(&ta, 0, offsetof(typeof(ta), nprobe));
+        ta.watch  = -1;
+        ta.x[0]   = atof(tok[1]) / 100.;
+        ta.y[0]   = atof(tok[2]) / 100.;
+        ta.hold   = atoi(tok[3]);
+        ta.period = ta.hold + 1;
+        ta.n = ta.count = 1;
+        ta.on           = 1;
+        ta.next         = plat_get_ticks();
+    } else if (!strcmp(tok[0], "seq") && (n >= 5)) {
+        memset(&ta, 0, offsetof(typeof(ta), nprobe));
+        ta.watch = -1;
+        ta.seq   = 1;
+        ta.hold  = atoi(tok[1]);
+        for (int i = 2; (i + 2) < n && ta.n < TA_PTS; i += 3) {
+            ta.delay[ta.n] = atoi(tok[i]);
+            ta.x[ta.n]     = atof(tok[i + 1]) / 100.;
+            ta.y[ta.n]     = atof(tok[i + 2]) / 100.;
+            ta.n++;
+        }
+        ta.count = ta.n;
+        ta.on    = 1;
+        ta.next  = plat_get_ticks() + ta.delay[0];
+    } else if (!strcmp(tok[0], "cycle") && (n >= 6)) {
+        memset(&ta, 0, offsetof(typeof(ta), nprobe));
+        ta.watch  = -1;
+        ta.period = atoi(tok[1]);
+        ta.hold   = atoi(tok[2]);
+        ta.count  = atoi(tok[3]);
+        for (int i = 4; (i + 1) < n && ta.n < TA_PTS; i += 2) {
+            ta.x[ta.n] = atof(tok[i]) / 100.;
+            ta.y[ta.n] = atof(tok[i + 1]) / 100.;
+            ta.n++;
+        }
+        ta.on   = 1;
+        ta.next = plat_get_ticks();
+    } else
+        return;
+    fprintf(log, "      CMD %s%s%s ...\n", tok[0], (n > 1) ? " " : "", (n > 1) ? tok[1] : "");
+    fflush(log);
+}
+
+/* Called at each poll before the buttons are read. */
+static void
+ta_poll(mouse_microtouch_t *dev)
+{
+    uint32_t now = plat_get_ticks();
+
+    if ((int32_t) (now - ta.check) >= 0) {
+        char  path[1024], line[512];
+        FILE *fp;
+
+        ta.check = now + 100;
+        path_append_filename(path, usr_path, "touchcmd.txt");
+        if ((fp = fopen(path, "r"))) {
+            while (fgets(line, sizeof(line), fp))
+                ta_command(dev->tt->fp, line);
+            fclose(fp);
+            remove(path);
+        }
+    }
+    if (!ta.on)
+        return;
+    if ((ta.watch >= 0) && ta_probe_yellow(ta.watch)) {
+        fprintf(dev->tt->fp, "      REACT: tile %d yellow %u ms after its press (%.0f guest ms)\n",
+                ta.watch, now - ta.watch_from, tt_guest_ms() - ta.watch_g);
+        ta.watch = -1;
+    }
+    if (ta.down) {
+        mouse_x_abs = ta.x[ta.idx];
+        mouse_y_abs = ta.y[ta.idx];
+        if (ta.jitter) {
+            mouse_x_abs += ((rand() % (2 * ta.jitter + 1)) - ta.jitter) / 640.;
+            mouse_y_abs += ((rand() % (2 * ta.jitter + 1)) - ta.jitter) / 480.;
+        }
+        if ((int32_t) (now - ta.up) >= 0) {
+            mouse_set_buttons_ex(0);
+            ta.down = 0;
+            ta.idx  = (ta.idx + 1) % ta.n;
+            if (ta.count && (++ta.done >= ta.count))
+                ta.final = 1; /* one more period, then the last probe */
+            if (ta.seq)
+                ta.next = now + (ta.final ? 1500 : ta.delay[ta.idx]);
+        }
+    } else if ((int32_t) (now - ta.next) >= 0) {
+        ta_log_probes(dev->tt->fp, ta.final ? "after the last tap" : "before tap");
+        if (tw_ring_dump)
+            tw_ring_log(dev->tt->fp, tw_ring_dump);
+        if (ta.final) {
+            ta.on = ta.final = 0;
+            return;
+        }
+        mouse_x_abs = ta.x[ta.idx];
+        mouse_y_abs = ta.y[ta.idx];
+        mouse_set_buttons_ex(1);
+        if (ta.watch >= 0)
+            fprintf(dev->tt->fp, "      REACT: tile %d not yellow within %u ms\n", ta.watch, now - ta.watch_from);
+        ta.watch      = (ta.idx < ta.nprobe && !ta_probe_yellow(ta.idx)) ? ta.idx : -1;
+        ta.watch_from = now;
+        ta.watch_g    = tt_guest_ms();
+        smp_start(dev->tt->fp);
+        ta.down = 1;
+        ta.up   = now + ta.hold;
+        ta.next = now + ta.period;
+    }
+}
+
+static double
+tt_guest_ms(void)
+{
+    return (cpuclock > 0.) ? ((double) tsc * 1000. / cpuclock) : 0.;
+}
+
+/* Finish the tracked click and write its line. */
+static void
+tt_finish(mouse_microtouch_t *dev, UNUSED(uint32_t now))
+{
+    mtouch_trace_t *t = dev->tt;
+    char            scr[64] = "first click";
+
+    if (t->prev_press)
+        snprintf(scr, sizeof(scr), "%5u ms after the previous release (%5u after its press)",
+                 t->h_press - t->prev_release, t->h_press - t->prev_press);
+    if (!t->lost && !t->seen)
+        fprintf(t->fp, "#%-4d host pressed, no poll saw it before the next click | %s\n", t->n, scr);
+    else if (!t->lost && !t->lifted)
+        fprintf(t->fp, "#%-4d touch seen +%u ms, %d reports, NO LIFTOFF before the next click | %s\n",
+                t->n, t->h_seen - t->h_press, t->reports, scr);
+    else if (t->lost)
+        fprintf(t->fp, "#%-4d host held %4u ms | LOST: pressed and released between two polls | %s\n",
+                t->n, t->h_release - t->h_press, scr);
+    else
+        fprintf(t->fp, "#%-4d host held %4u ms, poll saw it +%3u ms | touch %6.1f ms guest (%4u ms host), %3d reports, "
+                "at %3d%%,%3d%% moved %4.1f px | UART waits %d | liftoff read %s%5.1f ms after sent | %s\n",
+                t->n, t->h_release - t->h_press, t->h_seen - t->h_press, t->g_lift - t->g_seen, t->h_lift - t->h_seen,
+                t->reports, t->x, t->y, t->wander, t->rsr_busy, t->read ? "" : "NOT YET ", t->read ? (t->g_read - t->g_lift) : 0., scr);
+    fflush(t->fp);
+    t->active = t->check = 0;
+}
+
+/* Called at each poll, after the button state is read. */
+static void
+tt_poll(mouse_microtouch_t *dev)
+{
+    mtouch_trace_t *t = dev->tt;
+    uint32_t        press, release, now = plat_get_ticks();
+    int             seq;
+
+    tablet_get_trace(&seq, &press, &release);
+    if (tablet_get_marks() != t->marks) {
+        if (t->active)
+            tt_finish(dev, now);
+        t->marks = tablet_get_marks();
+        fprintf(t->fp, "      MARK (middle click) after #%d\n", t->n);
+        fflush(t->fp);
+    }
+    if (seq != t->seq) {
+        if (t->active)
+            tt_finish(dev, now); /* the next click came before the screen check */
+        if ((seq - t->seq) > 1)
+            fprintf(t->fp, "      (%d more host presses since the last poll, all lost)\n", seq - t->seq - 1);
+        FILE    *fp        = t->fp;
+        uint32_t prev_p    = t->h_press;
+        uint32_t prev_r    = t->h_release;
+        int      have_prev = (t->n != 0);
+        int      marks     = t->marks;
+
+        memset(t, 0, sizeof(mtouch_trace_t));
+        t->fp           = fp;
+        t->marks        = marks;
+        t->seq          = seq;
+        t->n            = seq; /* click number = host press count */
+        t->active       = 1;
+        t->h_press      = press;
+        t->prev_press   = have_prev ? prev_p : 0;
+        t->prev_release = have_prev ? prev_r : 0;
+    }
+    if (!t->active)
+        return;
+    if ((dev->but & 1) && !t->seen) {
+        t->seen   = 1;
+        t->h_seen = now;
+        t->g_seen = tt_guest_ms();
+        t->x      = (int) (dev->abs_x * 100.);
+        t->y      = (int) (dev->abs_y * 100.);
+        t->x0     = dev->abs_x;
+        t->y0     = dev->abs_y;
+    }
+    if ((dev->but & 1) && t->seen && !t->lifted) {
+        double dx = (dev->abs_x - t->x0) * 640., dy = (dev->abs_y - t->y0) * 480.;
+        double d  = (dx < 0 ? -dx : dx) > (dy < 0 ? -dy : dy) ? (dx < 0 ? -dx : dx) : (dy < 0 ? -dy : dy);
+        if (d > t->wander)
+            t->wander = d;
+    }
+    if (!(dev->but & 1) && !t->seen && ((int32_t) (release - press) >= 0) && !t->check) {
+        t->lost      = 1;
+        t->h_release = release;
+        t->check     = 1;
+        t->check_at  = now + TT_WAIT_MS;
+    }
+    if (t->check && ((int32_t) (now - t->check_at) >= 0))
+        tt_finish(dev, now);
+}
+
 
 static void
 mtouch_savenvr(void *priv)
@@ -735,6 +1365,22 @@ mtouch_prepare_transmit(void *priv)
         default: /* MODE_INACTIVE */
             break;
     }
+    if (dev->tt && dev->tt->active && dev->tt->seen && !dev->tt->lifted) {
+        if ((ev == EV_DOWN) || (ev == EV_CONT))
+            dev->tt->reports++;
+        else if (ev == EV_UP) {
+            int      seq;
+            uint32_t press;
+
+            dev->tt->reports++;
+            dev->tt->lifted   = 1;
+            dev->tt->g_lift   = tt_guest_ms();
+            dev->tt->h_lift   = plat_get_ticks();
+            tablet_get_trace(&seq, &press, &dev->tt->h_release);
+            dev->tt->check    = 1;
+            dev->tt->check_at = plat_get_ticks() + TT_WAIT_MS;
+        }
+    }
     return 0;
 }
 
@@ -766,7 +1412,14 @@ mtouch_write_to_host(void *priv)
        spot, so the Linux MAXX releases missed taps.  Wait until the receive
        shift register is free, as the bytes of a real serial line would. */
     if (dev->serial->out_new != 0xffff) {
+        if (dev->tt)
+            dev->tt->rsr_busy++;
         goto no_write_to_machine;
+    }
+    if (dev->tt && dev->tt->lifted && !dev->tt->read && !fifo8_num_used(&dev->resp) &&
+        !(dev->serial->lsr & 1) && (!dev->serial->fifo_enabled || fifo_get_empty(dev->serial->rcvr_fifo))) {
+        dev->tt->read   = 1;
+        dev->tt->g_read = tt_guest_ms();
     }
     if (fifo8_num_used(&dev->resp)) {
         serial_write_fifo(dev->serial, fifo8_pop(&dev->resp));
@@ -787,6 +1440,8 @@ mtouch_poll(void *priv)
     /* MegaPPBox: a press seen since the last poll counts even if the button is
        already up again, so a very quick tap still gives a touchdown and a
        liftoff instead of nothing. */
+    if (dev->tt)
+        ta_poll(dev);
     dev->but = tablet_get_buttons_ex() | tablet_take_pressed();
     mouse_get_abs_coords(&dev->raw_x, &dev->raw_y);
 
@@ -824,6 +1479,8 @@ mtouch_poll(void *priv)
     if (dev->abs_x <= 0.0) dev->abs_x = 0.0;
     if (dev->abs_y <= 0.0) dev->abs_y = 0.0;
 
+    if (dev->tt)
+        tt_poll(dev);
     return 0;
 }
 
@@ -861,6 +1518,26 @@ mtouch_init(UNUSED(const device_t *info))
         dev->baud_rate = 9600;
     timer_on_auto(&dev->host_to_serial_timer, (1000000. / dev->baud_rate) * 10);
 
+    if (getenv("MEGAPPBOX_TOUCH_TRACE") && *getenv("MEGAPPBOX_TOUCH_TRACE")) {
+        char path[1024];
+
+        dev->tt = calloc(1, sizeof(mtouch_trace_t));
+        path_append_filename(path, usr_path, "touchtrace.log");
+        dev->tt->fp = fopen(path, "a");
+        if (dev->tt->fp) {
+            time_t now = time(NULL);
+            fprintf(dev->tt->fp, "=== MicroTouch trace, %s", ctime(&now));
+            tablet_get_trace(&dev->tt->seq, &dev->tt->h_press, &dev->tt->h_release);
+            dev->tt->marks     = tablet_get_marks();
+            tablet_trace_marks = 1;
+            timer_add(&smp.timer, smp_tick, NULL, 0);
+            timer_add(&irq_rt.timer, irq_rate_done, NULL, 0);
+        } else {
+            free(dev->tt);
+            dev->tt = NULL;
+        }
+    }
+
     mouse_set_buttons(2);
     mouse_set_poll_ex(mtouch_poll_global, dev);
     mtouch_inst = dev;
@@ -874,6 +1551,10 @@ mtouch_close(void *priv)
     mouse_microtouch_t *dev = (mouse_microtouch_t *) priv;
     
     fifo8_destroy(&dev->resp);
+    if (dev->tt) {
+        fclose(dev->tt->fp);
+        free(dev->tt);
+    }
     /* Detach serial port from the mouse. */
     if (dev && dev->serial && dev->serial->sd) {
         memset(dev->serial->sd, 0, sizeof(serial_device_t));

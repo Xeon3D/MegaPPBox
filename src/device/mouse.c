@@ -139,6 +139,11 @@ static ATOMIC_INT      mouse_w;
 static ATOMIC_INT      mouse_buttons;
 static ATOMIC_INT      tablet_buttons;
 static ATOMIC_INT      tablet_pressed; /* MegaPPBox: buttons pressed since the last tablet_take_pressed() */
+static ATOMIC_INT      tablet_press_seq;   /* MegaPPBox touch trace: host presses so far */
+static ATOMIC_INT      tablet_press_ms;    /* host ms of the last press */
+static ATOMIC_INT      tablet_release_ms;  /* host ms of the last release */
+static ATOMIC_INT      tablet_mark_seq;    /* middle clicks, when the touch trace is on */
+int                    tablet_trace_marks; /* MegaPPBox touch trace: middle click = mark, not a touch */
 
 static int             mouse_delta_b;
 static int             mouse_old_b;
@@ -624,6 +629,21 @@ mouse_subtract_w(int *delta_w, int min, int max, int invert)
 void
 mouse_set_buttons_ex(int b)
 {
+    if (mouse_input_mode >= 1) {
+        int old = ATOMIC_LOAD(tablet_buttons);
+
+        if (tablet_trace_marks && (b & 4)) {
+            if (!(old & 4))
+                ATOMIC_STORE(tablet_mark_seq, ATOMIC_LOAD(tablet_mark_seq) + 1);
+            b &= ~4; /* the mark is not a touch */
+        }
+
+        if ((b & 1) && !(old & 1)) {
+            ATOMIC_STORE(tablet_press_ms, (int) plat_get_ticks());
+            ATOMIC_STORE(tablet_press_seq, ATOMIC_LOAD(tablet_press_seq) + 1);
+        } else if (!(b & 1) && (old & 1))
+            ATOMIC_STORE(tablet_release_ms, (int) plat_get_ticks());
+    }
     if (mouse_input_mode >= 1)
         ATOMIC_STORE(tablet_pressed, ATOMIC_LOAD(tablet_pressed) | (b & ~ATOMIC_LOAD(tablet_buttons)));
     ATOMIC_STORE(*(mouse_input_mode >= 1 ? &tablet_buttons : &mouse_buttons), b);
@@ -651,6 +671,22 @@ tablet_take_pressed(void)
 
     ATOMIC_STORE(tablet_pressed, 0);
     return b;
+}
+
+/* MegaPPBox touch trace: the host's presses so far and the times of the last
+   press and release, so a touch screen can tell what the host did between polls. */
+void
+tablet_get_trace(int *seq, uint32_t *press_ms, uint32_t *release_ms)
+{
+    *release_ms = (uint32_t) ATOMIC_LOAD(tablet_release_ms);
+    *press_ms   = (uint32_t) ATOMIC_LOAD(tablet_press_ms);
+    *seq        = ATOMIC_LOAD(tablet_press_seq);
+}
+
+int
+tablet_get_marks(void)
+{
+    return ATOMIC_LOAD(tablet_mark_seq);
 }
 
 void
