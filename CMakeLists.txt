@@ -38,7 +38,7 @@ endif()
 # MegaPPBox's own version (window title, About, file version).  The project
 # VERSION below stays upstream's: it reaches the guest (IDE/SCSI firmware
 # revisions, SPD revision codes), and the games must see the same hardware.
-set(MEGAPPBOX_VERSION "1.04")
+set(MEGAPPBOX_VERSION "1.05")
 string(REPLACE "." ";" MEGAPPBOX_VERSION_LIST ${MEGAPPBOX_VERSION})
 list(GET MEGAPPBOX_VERSION_LIST 0 MEGAPPBOX_VERSION_MAJ)
 list(GET MEGAPPBOX_VERSION_LIST 1 MEGAPPBOX_VERSION_MIN)
