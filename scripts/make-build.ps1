@@ -14,13 +14,19 @@
     (NVRAM.DAT, DEBUG.DAT), so point -Library at working copies, never at
     original images.
 
+    -Dir refreshes one fixed folder instead of making a numbered one (the
+    "latest" rig): the exe and roms\ are replaced, the user's MegaPPBox.cfg,
+    nvr\ and keys\ are kept.
+
     Usage:
         pwsh scripts\make-build.ps1 -Name "first-manager" [-Library "F:\...\masters"] [-Root <dir>]
+        pwsh scripts\make-build.ps1 -Name "latest" -Dir "F:\TouchPPBox Folder\Latest Rig"
 #>
 param(
     [Parameter(Mandatory = $true)][string] $Name,
     [string] $Library,
-    [string] $Root = (Join-Path (Split-Path $PSScriptRoot -Parent) "..\MegaPPBox-builds")
+    [string] $Root = (Join-Path (Split-Path $PSScriptRoot -Parent) "..\MegaPPBox-builds"),
+    [string] $Dir
 )
 $ErrorActionPreference = "Stop"
 
@@ -28,21 +34,31 @@ $repo = Split-Path $PSScriptRoot -Parent
 $exe  = Join-Path $repo "build\src\MegaPPBox.exe"
 if (-not (Test-Path $exe)) { throw "No build at $exe - build first." }
 
-New-Item -ItemType Directory -Force -Path $Root | Out-Null
-$Root = (Resolve-Path $Root).Path
+if ($Dir) {
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    $dir   = (Resolve-Path $Dir).Path
+    $label = $Name
+    # Replace the ROM set whole so nothing stale lingers; settings and CMOS stay.
+    $oldRoms = Join-Path $dir "roms"
+    if (Test-Path $oldRoms) { Remove-Item $oldRoms -Recurse -Force }
+} else {
+    New-Item -ItemType Directory -Force -Path $Root | Out-Null
+    $Root = (Resolve-Path $Root).Path
 
-# Number the folders so they sort in the order they were made.
-$next = 1
-$existing = Get-ChildItem $Root -Directory | Where-Object { $_.Name -match '^(\d+)-' } |
-            ForEach-Object { [int]($_.Name -split '-')[0] }
-if ($existing) { $next = ($existing | Measure-Object -Maximum).Maximum + 1 }
-$dir = Join-Path $Root ($next.ToString("00") + "-" + $Name)
-New-Item -ItemType Directory -Path $dir | Out-Null
+    # Number the folders so they sort in the order they were made.
+    $next = 1
+    $existing = Get-ChildItem $Root -Directory | Where-Object { $_.Name -match '^(\d+)-' } |
+                ForEach-Object { [int]($_.Name -split '-')[0] }
+    if ($existing) { $next = ($existing | Measure-Object -Maximum).Maximum + 1 }
+    $dir   = Join-Path $Root ($next.ToString("00") + "-" + $Name)
+    $label = $next.ToString("00") + " - " + $Name
+    New-Item -ItemType Directory -Path $dir | Out-Null
+}
 
-Copy-Item $exe $dir
+Copy-Item $exe $dir -Force
 Copy-Item (Join-Path $repo "roms") $dir -Recurse
 
-if ($Library) {
+if ($Library -and -not ($Dir -and (Test-Path (Join-Path $dir "MegaPPBox.cfg")))) {
     # Settings files are UTF-8 without a byte-order mark.
     [System.IO.File]::WriteAllText((Join-Path $dir "MegaPPBox.cfg"),
         "[MegaPPBox]`r`nlibrary = $Library`r`n", (New-Object System.Text.UTF8Encoding($false)))
@@ -52,7 +68,7 @@ $commit  = (& git -C $repo rev-parse --short HEAD).Trim()
 $subject = (& git -C $repo log -1 --pretty=%s).Trim()
 $dirty   = if (& git -C $repo status --porcelain -- src) { " (plus uncommitted changes)" } else { "" }
 @"
-MegaPPBox build $($next.ToString("00")) - $Name
+MegaPPBox build $label
 Commit:  $commit $subject$dirty
 Made:    $(Get-Date -Format "yyyy-MM-dd HH:mm")
 Library: $(if ($Library) { $Library } else { "(none - choose one in the Machine Manager)" })
