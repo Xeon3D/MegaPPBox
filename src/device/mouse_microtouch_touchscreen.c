@@ -448,6 +448,17 @@ mtouch_write_to_host(void *priv)
     if (dev->in_reset) {
         goto no_write_to_machine;
     }
+    /* MegaPPBox: serial_write_fifo() only parks the byte in the UART's receive
+       shift register; the UART's own receive timer moves it into RBR or the
+       FIFO.  Writing again before that happened overwrote the previous byte.
+       A lost report byte is harmless (the next report resyncs), but a lost
+       liftoff status byte (0x88) made 3M's TouchWare driver drop the liftoff:
+       the finger stayed down, and the next touch became a drag from the old
+       spot, so the Linux MAXX releases missed taps.  Wait until the receive
+       shift register is free, as the bytes of a real serial line would. */
+    if (dev->serial->out_new != 0xffff) {
+        goto no_write_to_machine;
+    }
     if (fifo8_num_used(&dev->resp)) {
         serial_write_fifo(dev->serial, fifo8_pop(&dev->resp));
     }
