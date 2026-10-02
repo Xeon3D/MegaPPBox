@@ -342,8 +342,11 @@ MachineManager::selectionChanged()
     profile->setCurrentIndex(qMax(0, profile->findData(p)));
     board->setCurrentIndex(qMax(0, board->findData(e->userBoard)));
     board->setEnabled(ok && MT_IS_MAXX(p));
-    if (e->modem < 0)
-        e->modem = megatouch_image_option(e->path.toUtf8().constData(), MT_OPT_MODEM);
+    if (e->modem < 0) {
+        /* The image's own choice, else on for a release with an on-line client. */
+        const int saved = megatouch_image_option_saved(e->path.toUtf8().constData(), MT_OPT_MODEM);
+        e->modem = (saved < 0) ? e->id.modem : saved;
+    }
     if (e->network < 0)
         e->network = megatouch_image_option(e->path.toUtf8().constData(), MT_OPT_NETWORK);
     modemBox->setChecked(e->modem > 0);

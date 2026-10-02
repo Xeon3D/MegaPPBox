@@ -428,6 +428,9 @@ void setMaxx(MtIdent &id, int major, const QString &version, MtIdent::Kind kind)
        no PCI audio (with the C-Media chip Emerald's DIP tools send it into the
        burn-in suite).  The Linux releases want 64 MB. */
     id.profile = (major <= 9) ? MT_PROFILE_MAXX_OLD : MT_PROFILE_MAXX_NEW;
+    /* Diamond (V6) on dial in: TournaMAXX on the DOS releases (MAXX, 2K and 2K
+       Plus have no client), Merit's own client on the Linux ones. */
+    id.modem = (major >= 6);
 
     if (kind == MtIdent::LinuxDisk)
         id.note = QStringLiteral("Linux releases restart once on first boot or after a hardware change, "
@@ -435,8 +438,8 @@ void setMaxx(MtIdent &id, int major, const QString &version, MtIdent::Kind kind)
     if (version.contains(QStringLiteral("V3.02")))
         id.note = QStringLiteral("V3.02's key bit timing is erratic here; its key reads fail (open).");
     if (version.contains(QStringLiteral("V8.05")))
-        id.note = QStringLiteral("The only known V8.05 disk has an altered game executable; "
-                                 "genuine Emerald keys fail on it.");
+        id.note = QStringLiteral("The only known V8.05 disk had an altered game executable (genuine "
+                                 "Emerald keys fail on it); a restored copy runs with the Emerald key.");
 }
 
 bool identifyDos(Image &img, const QVector<Part> &parts, MtIdent &id)

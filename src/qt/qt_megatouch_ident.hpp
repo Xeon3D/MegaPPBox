@@ -30,6 +30,9 @@ struct MtIdent {
     int     profile = -1;
     QString keyPrefix; /* keys\<prefix>_full_*: "MEMERALD"; empty = none   */
     QString note;     /* anything the user should know                     */
+    bool    modem = false; /* has an on-line client (TournaMAXX on the DOS
+                              releases, Merit's own on Linux): the modem
+                              option starts on for it                      */
 
     bool runnable() const { return (kind == DosDisk) || (kind == LinuxDisk) || (kind == XlCd); }
 };

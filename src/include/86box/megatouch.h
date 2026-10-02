@@ -91,6 +91,7 @@ extern void megatouch_apply_profile(void);
 #define MT_OPT_MODEM   "modem"
 #define MT_OPT_NETWORK "network"
 extern int  megatouch_image_option(const char *image, const char *name);
+extern int  megatouch_image_option_saved(const char *image, const char *name);
 extern void megatouch_set_image_option(const char *image, const char *name, int val);
 
 /* Keep the Network dialog's settings (net_cards_conf[]) with the image. */

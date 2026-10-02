@@ -400,13 +400,26 @@ megatouch_image_option(const char *image, const char *name)
     return !!config_get_int(sec, (char *) name, 0);
 }
 
+/* The image's saved choice: 0 or 1, or -1 when it has none (the release's
+   default then applies -- the modem is on for releases with an on-line client). */
+int
+megatouch_image_option_saved(const char *image, const char *name)
+{
+    char sec[64];
+    int  v;
+
+    if (!mt_image_section(image, 0, sec, sizeof(sec)))
+        return -1;
+    v = config_get_int(sec, (char *) name, -1);
+    return (v < 0) ? -1 : !!v;
+}
+
 void
 megatouch_set_image_option(const char *image, const char *name, int val)
 {
     char sec[64];
 
-    if (!val && !megatouch_image_option(image, name))
-        return; /* off is the default: no section just to say so */
+    /* Off is saved too: a release may default to on. */
     if (mt_image_section(image, 1, sec, sizeof(sec)))
         config_set_int(sec, (char *) name, !!val);
 }
