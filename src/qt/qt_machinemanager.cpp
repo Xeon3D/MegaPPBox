@@ -428,9 +428,11 @@ MachineManager::accept()
     chosenKey     = key->currentData().toString();
     chosenTitle   = e->id.version.isEmpty() ? e->id.release : QString("%1 %2").arg(e->id.release, e->id.version);
 
-    /* Options changed on any image are kept with that image. */
+    /* Options changed on any image are kept with that image; the chosen
+       image's always are, so that a release's default (the modem, from
+       Diamond on) is what the emulator builds, not only what the box shows. */
     for (const Entry &x : entries) {
-        if (!x.optsChanged)
+        if (!x.optsChanged && (&x != e))
             continue;
         const QByteArray path = x.path.toUtf8();
         megatouch_set_image_option(path.constData(), MT_OPT_MODEM, x.modem > 0);
