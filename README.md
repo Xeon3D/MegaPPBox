@@ -1,5 +1,9 @@
-MegaPPBox
-=========
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/megappbox-logo-dark.svg">
+    <img src="docs/logo/megappbox-logo.svg" alt="MegaPPBox" width="560">
+  </picture>
+</p>
 
 **MegaPPBox is a fork of [86Box](https://github.com/86Box/86Box) stripped down to
 the Merit Megatouch XL and MAXX countertop cabinets, so that untouched disk and CD
