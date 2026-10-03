@@ -7,7 +7,6 @@
 
 add_library(net OBJECT
     network.c
-    net_slirp.c
     net_pcap.c
     net_switch.c
     net_event.c
@@ -17,9 +16,15 @@ add_library(net OBJECT
     net_ne2000.c
 )
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(SLIRP REQUIRED IMPORTED_TARGET slirp)
-target_link_libraries(86Box PkgConfig::SLIRP)
+if(ANDROID)
+    # Android: no libslirp (it needs glib); Mega-Link runs over the switch.
+    target_compile_definitions(net PRIVATE NO_SLIRP)
+else()
+    target_sources(net PRIVATE net_slirp.c)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(SLIRP REQUIRED IMPORTED_TARGET slirp)
+    target_link_libraries(86Box PkgConfig::SLIRP)
+endif()
 
 if(WIN32)
     target_link_libraries(PkgConfig::SLIRP INTERFACE wsock32 ws2_32 iphlpapi)

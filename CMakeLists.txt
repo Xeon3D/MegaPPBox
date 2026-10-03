@@ -131,6 +131,14 @@ if(APPLE)
     option(CMAKE_MACOSX_BUNDLE "Build a macOS bundle (.app)" ON)
 endif()
 
+if(ANDROID)
+    # Android: no Qt (the native app loads the emulator as a library)
+    # and none of the desktop-only extras.
+    set(QT OFF CACHE BOOL "" FORCE)
+    set(DISCORD OFF CACHE BOOL "" FORCE)
+    set(LIBRASHADER OFF CACHE BOOL "" FORCE)
+endif()
+
 if(NOT NO_STATIC_OPTION)
     if(PREFER_STATIC)
         option(STATIC_BUILD "Static build" ON)

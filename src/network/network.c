@@ -64,6 +64,10 @@
 #include <86box/timer.h>
 #include <86box/network.h>
 
+#ifdef NO_SLIRP
+int slirp_card_num = 2; /* net_slirp.c's, which is not built (Android) */
+#endif
+
 #ifdef _WIN32
 #    define WIN32_LEAN_AND_MEAN
 #    include <windows.h>
@@ -204,7 +208,9 @@ network_init(void)
 
     /* Initialize the Pcap system module, if present. */
 
+#ifndef NO_SLIRP
     network_devmap.has_slirp = 1;
+#endif
     i = net_pcap_prepare(&network_devs[network_ndev]);
     if (i > 0) {
         network_devmap.has_pcap = 1;
@@ -453,10 +459,12 @@ network_attach(void *card_drv, uint8_t *mac, NETRXCB rx, NETSETLINKSTATE set_lin
     /* SLiRP (NAT), PCap (a real network card on the host) and the switch
        (other emulated cabinets: Mega-Link) are what MegaPPBox carries. */
     switch (net_type) {
+#ifndef NO_SLIRP
         case NET_TYPE_SLIRP:
             card->host_drv      = net_slirp_drv;
             card->host_drv.priv = card->host_drv.init(card, mac, NULL, net_drv_error);
             break;
+#endif
 
         case NET_TYPE_PCAP:
             card->host_drv      = net_pcap_drv;

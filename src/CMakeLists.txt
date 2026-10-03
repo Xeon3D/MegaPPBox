@@ -24,7 +24,16 @@ if(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 endif()
 
-add_executable(86Box
+if(ANDROID)
+    # Android: the emulator is a shared library (libMegaPPBox.so) that
+    # the app loads; its platform layer is android/native.
+    set(MPB_ADD_EXECUTABLE add_library)
+    set(MPB_EXE_KIND SHARED)
+else()
+    set(MPB_ADD_EXECUTABLE add_executable)
+    set(MPB_EXE_KIND)
+endif()
+cmake_language(CALL ${MPB_ADD_EXECUTABLE} 86Box ${MPB_EXE_KIND}
     86box.c
     config.c
     timer.c
@@ -143,9 +152,10 @@ target_link_libraries(86Box
     mdsx_dll
     utils
     vid
-    plat
-    ui
 )
+if(NOT ANDROID)
+    target_link_libraries(86Box plat ui) # the Qt front end's (src/qt)
+endif()
 
 if(HAIKU)
     target_link_libraries(86Box be)
@@ -319,10 +329,13 @@ add_subdirectory(osd)
 
 # MegaPPBox: the Machine Manager and the cabinet controls are Qt; there is no SDL
 # front end.
-if (NOT QT)
+if(ANDROID)
+    add_subdirectory(${CMAKE_SOURCE_DIR}/android/native android) # the Android app's platform layer
+elseif(NOT QT)
     message(FATAL_ERROR "MegaPPBox needs the Qt UI (QT=ON).")
+else()
+    add_subdirectory(qt)
 endif()
-add_subdirectory(qt)
 
 if(CMAKE_SYSTEM_NAME MATCHES "NetBSD")
     add_custom_command(TARGET 86Box POST_BUILD COMMAND paxctl ARGS +m $<TARGET_FILE:86Box> COMMENT "Disable PaX MPROTECT")

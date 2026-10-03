@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">MegaPPBox</string>
+    <string name="credit">Credit</string>
+    <string name="setup">Setup</string>
+    <string name="calibrate">Calibrate</string>
+    <string name="fullscreen">Fullscreen</string>
+    <string name="more">More</string>
+    <string name="machine_manager">Machine Manager</string>
+    <string name="manager">Manager</string>
+    <string name="pause">Pause</string>
+    <string name="resume">Resume</string>
+    <string name="reset">Reset</string>
+    <string name="exit">Exit</string>
+    <string name="megalink">Mega-Link…</string>
+    <string name="modem">Modem…</string>
+    <string name="about">About</string>
+    <string name="about_text">A Megatouch XL &amp; MAXX Emulator based on 86Box.</string>
+    <string name="paused">paused</string>
+    <string name="import_image">Import</string>
+    <string name="import_key">Import key</string>
+    <string name="keys">Keys</string>
+    <string name="rescan">Rescan</string>
+    <string name="delete">Delete</string>
+    <string name="no_images">No images yet.\n\nImport a Megatouch disk (.img) or CD (.iso) image: it is copied into this app\'s folder. Each release also needs a dump of its security key: Keys (in the menu) lists them and imports more.</string>
+</resources>

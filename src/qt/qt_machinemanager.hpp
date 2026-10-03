@@ -34,6 +34,10 @@ class QTreeWidgetItem;
 QStringList mt_import_keys(QWidget *parent);
 QStringList mt_import_images(QWidget *parent, const QString &dir);
 
+/* The key manager: the keys installed (built in and imported), the releases
+   each runs; Import and Delete. */
+void mt_show_keys(QWidget *parent);
+
 class MachineManager : public QDialog {
     Q_OBJECT
 

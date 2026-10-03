@@ -21,6 +21,7 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDirIterator>
@@ -35,10 +36,12 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QProgressDialog>
+#include <QRegularExpression>
 #include <QPushButton>
 #include <QSettings>
 #include <QTimer>
 #include <QTreeWidget>
+#include <QUrl>
 #include <QVBoxLayout>
 
 extern "C" {
@@ -214,6 +217,89 @@ mt_import_images(QWidget *parent, const QString &dir)
     return imported;
 }
 
+/* The keys: what is installed (built in, and imported into the keys folder), the
+   releases each runs, and Import / Delete. */
+void
+mt_show_keys(QWidget *parent)
+{
+    QDialog dlg(parent);
+    dlg.setWindowTitle(QObject::tr("Keys"));
+    dlg.resize(760, 420);
+
+    auto *list = new QTreeWidget;
+    list->setColumnCount(4);
+    list->setHeaderLabels({ QObject::tr("Runs"), QObject::tr("Key"), QObject::tr("Type"), QObject::tr("File") });
+    list->setRootIsDecorated(false);
+    list->setUniformRowHeights(true);
+    list->setSortingEnabled(true);
+    list->header()->setSectionResizeMode(0, QHeaderView::Stretch);
+    auto *where = new QLabel(QObject::tr("Imported keys are kept in %1.").arg(QDir::toNativeSeparators(mt_keys_dir())));
+    where->setWordWrap(true);
+    where->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    auto fill = [list]() {
+        list->clear();
+        auto add = [list](const QString &file, int len, bool builtin, const QString &shown) {
+            const QByteArray      name = file.toUtf8();
+            const mt_key_family_t *f   = mt_key_family_from_name(name.constData());
+            QString which = f ? file.mid((int) strlen(f->prefix) + 1) : file;
+            which.remove(QRegularExpression(QStringLiteral("^(full|multikey)_")));
+            auto *it = new QTreeWidgetItem(list);
+            it->setText(0, f ? QString::fromUtf8(f->releases) : QObject::tr("(unknown release)"));
+            it->setText(1, builtin ? shown : which);
+            it->setText(2, (mt_key_kind((size_t) len) == MT_KEY_MULTIKEY) ? QObject::tr("DS1205 MultiKey") : QObject::tr("DS1991"));
+            it->setText(3, builtin ? QObject::tr("built in") : file);
+            it->setData(0, Qt::UserRole, builtin ? QString() : file);
+        };
+        for (const mt_builtin_key_t *k = mt_builtin_keys; k->id; k++)
+            add(QString::fromLatin1(k->id), k->len, true, QString::fromUtf8(k->name));
+        for (const QFileInfo &fi : QDir(mt_keys_dir()).entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase))
+            if (mt_key_kind((size_t) fi.size()))
+                add(fi.fileName(), (int) fi.size(), false, QString());
+        list->sortItems(0, Qt::AscendingOrder);
+        for (int c = 1; c < 4; c++)
+            list->resizeColumnToContents(c);
+    };
+    fill();
+
+    auto *buttons  = new QDialogButtonBox(QDialogButtonBox::Close);
+    auto *importBt = buttons->addButton(QObject::tr("&Import…"), QDialogButtonBox::ActionRole);
+    auto *deleteBt = buttons->addButton(QObject::tr("&Delete"), QDialogButtonBox::ActionRole);
+    auto *folderBt = buttons->addButton(QObject::tr("Open &folder"), QDialogButtonBox::ActionRole);
+    deleteBt->setEnabled(false);
+    QObject::connect(list, &QTreeWidget::itemSelectionChanged, &dlg, [list, deleteBt]() {
+        const auto *it = list->currentItem();
+        deleteBt->setEnabled(it && !it->data(0, Qt::UserRole).toString().isEmpty());
+    });
+    QObject::connect(importBt, &QPushButton::clicked, &dlg, [&dlg, fill]() {
+        if (!mt_import_keys(&dlg).isEmpty())
+            fill();
+    });
+    QObject::connect(deleteBt, &QPushButton::clicked, &dlg, [&dlg, list, fill]() {
+        const auto *it = list->currentItem();
+        const QString file = it ? it->data(0, Qt::UserRole).toString() : QString();
+        if (file.isEmpty())
+            return;
+        if (QMessageBox::question(&dlg, QObject::tr("Delete key"),
+                                  QObject::tr("Delete %1 from the keys folder?").arg(file))
+            != QMessageBox::Yes)
+            return;
+        QFile::remove(QDir(mt_keys_dir()).filePath(file));
+        fill();
+    });
+    QObject::connect(folderBt, &QPushButton::clicked, &dlg, []() {
+        QDir().mkpath(mt_keys_dir());
+        QDesktopServices::openUrl(QUrl::fromLocalFile(mt_keys_dir()));
+    });
+    QObject::connect(buttons, &QDialogButtonBox::rejected, &dlg, &QDialog::reject);
+
+    auto *layout = new QVBoxLayout(&dlg);
+    layout->addWidget(list, 1);
+    layout->addWidget(where);
+    layout->addWidget(buttons);
+    dlg.exec();
+}
+
 MachineManager::MachineManager(QWidget *parent)
     : QDialog(parent)
 {
@@ -254,9 +340,12 @@ MachineManager::MachineManager(QWidget *parent)
     key     = new QComboBox;
     auto *importKeyBtn = new QPushButton(tr("Import &key…"));
     importKeyBtn->setToolTip(tr("Copy key dumps into the keys folder; the release each is for is read from the dump"));
+    auto *keysBtn = new QPushButton(tr("K&eys…"));
+    keysBtn->setToolTip(tr("The keys installed, and the releases each runs"));
     auto *keyRow = new QHBoxLayout;
     keyRow->addWidget(key, 1);
     keyRow->addWidget(importKeyBtn);
+    keyRow->addWidget(keysBtn);
     modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
     networkBox = new QCheckBox;
     showNetworkCard(-1);
@@ -310,6 +399,10 @@ MachineManager::MachineManager(QWidget *parent)
         }
         if (!mt_import_images(this, folder->text().trimmed()).isEmpty())
             scan();
+    });
+    connect(keysBtn, &QPushButton::clicked, this, [this]() {
+        mt_show_keys(this);
+        selectionChanged(); /* keys may have come or gone */
     });
     connect(importKeyBtn, &QPushButton::clicked, this, [this]() {
         /* The current image takes its release's key, unless the user chose one. */

@@ -1,11 +1,14 @@
-# Build MegaPPBox for Windows, Linux and macOS, and publish the three archives as
-# a GitHub Release when the commit carries a v<x.y> tag (modelled on MegaPPBox's).
+# Build MegaPPBox for Windows, Linux, macOS and Android, and publish the three
+# archives and the APK as one GitHub Release when the commit carries a v<x.y> tag.
 #
-# The per-OS jobs mirror the three CMake (...) CI workflows, which build this tree
+# The desktop jobs mirror the three CMake (...) CI workflows, which build this tree
 # green -- same dependency lists, same configure flags -- but with preset `regular`
 # (Release), and with roms/ staged beside the binary so the download runs as-is.
-# The security keys are built into the executable.  macOS builds arm64 with
-# NEW_DYNAREC on, because the CI matrix excludes the old dynarec on arm64.
+# No security keys are included (keys/README.md): users import their own.  macOS
+# builds arm64 with NEW_DYNAREC on, because the CI matrix excludes the old dynarec
+# on arm64.  Android builds the same tree for arm64 (android/README.md), signed with
+# the release key from the repository's secrets: MEGAPPBOX_ANDROID_KEYSTORE (the
+# PKCS12 keystore, base64) and MEGAPPBOX_ANDROID_KEYSTORE_PASSWORD (alias megappbox).
 #
 # Only a tagged commit is published:
 #
@@ -29,6 +32,7 @@ on:
       - src/**
       - cmake/**
       - roms/**
+      - android/**
       - "**/CMakeLists.txt"
       - CMakePresets.json
       - .github/workflows/release.yml
@@ -241,9 +245,80 @@ jobs:
           name: MegaPPBox-macos-arm64
           path: MegaPPBox-macos-arm64.zip
 
+  android:
+    name: Android (arm64)
+    needs: version
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # android/scripts/env.sh: the runner's own SDK and JDK, the rest under ~/mpb-android.
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y ninja-build
+          echo "MPB_ANDROID=$HOME/mpb-android"   >> "$GITHUB_ENV"
+          echo "MPB_ANDROID_SDK=$ANDROID_HOME"    >> "$GITHUB_ENV"
+          echo "MPB_JAVA_HOME=$JAVA_HOME"         >> "$GITHUB_ENV"
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" \
+              "ndk;27.2.12479018" "platforms;android-36" "build-tools;36.1.0" > /dev/null
+
+      - name: Cache the libraries
+        id: deps
+        uses: actions/cache@v4
+        with:
+          path: ~/mpb-android/deps
+          key: android-deps-${{ hashFiles('android/scripts/build-deps.sh') }}
+
+      - name: Libraries
+        if: steps.deps.outputs.cache-hit != 'true'
+        run: bash android/scripts/build-deps.sh
+
+      # Release-signed when the repository has the key; otherwise a debug build, so a
+      # fork still builds.
+      - name: Signing key
+        id: key
+        env:
+          KEYSTORE: ${{ secrets.MEGAPPBOX_ANDROID_KEYSTORE }}
+          PASSWORD: ${{ secrets.MEGAPPBOX_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE" ]; then echo "signed=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          mkdir -p "$MPB_ANDROID"
+          echo "$KEYSTORE" | base64 -d > "$MPB_ANDROID/release.keystore"
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=megappbox\nkeyPassword=%s\n' \
+              "$MPB_ANDROID/release.keystore" "$PASSWORD" "$PASSWORD" > "$MPB_ANDROID/release-signing.properties"
+          echo "signed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.key.outputs.signed }}" = true ]; then
+            bash android/scripts/build.sh release
+            cp android/out/MegaPPBox-*-android.apk MegaPPBox-android-arm64.apk
+          else
+            bash android/scripts/build.sh
+            cp android/out/MegaPPBox-debug.apk MegaPPBox-android-arm64.apk
+          fi
+
+      - name: Forget the key
+        if: always()
+        run: rm -f "$MPB_ANDROID/release.keystore" "$MPB_ANDROID/release-signing.properties"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: MegaPPBox-android-arm64
+          path: MegaPPBox-android-arm64.apk
+
   release:
     name: Publish release
-    needs: [version, windows, linux, macos]
+    needs: [version, windows, linux, macos, android]
     # Named versions only.  An untagged push has already done the useful part by
     # building; its binaries are on the run page as artifacts.
     # Published by the tag's own run (or a manual one), not also by the run of a
@@ -293,10 +368,12 @@ jobs:
               echo "$headline"
               echo
               echo "Each archive contains the emulator and its ROMs. Run it, press"
-              echo "**Browse...** in the Machine Manager and choose your images folder."
+              echo "**Browse...** in the Machine Manager and choose your images folder,"
+              echo "and import your security keys with **Import key...**."
+              echo "The APK is the Android app (arm64, Android 9 or later)."
             } > notes.md
           fi
-          gh release create "$tag" assets/*.zip \
+          gh release create "$tag" assets/*.zip assets/*.apk \
               --title "$title" \
               --notes-file notes.md \
               --latest

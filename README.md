@@ -13,6 +13,11 @@ those checks in emulated hardware — no patched executables, no bypass.
 Everything else about each machine is fixed by its hardware profile, and a
 Machine Manager picks the profile and key from what the image says it is.
 
+It runs on Windows, Linux and macOS, and on Android phones and tablets (arm64,
+see [android/README.md](android/README.md)); every release carries all four.
+No security keys are included: import dumps of your own (see
+[Security keys](#security-keys)).
+
 Credit
 ------
 
@@ -21,8 +26,9 @@ authors** (see [AUTHORS](AUTHORS)). MegaPPBox is a little Megatouch-specific
 hardware and a lot of deletion on top of their work. The I/O map and key wiring
 of the XL generation were cross-checked against MAME's `mtouchxl` driver, whose
 DS1205 emulation (smf, Carl) the early XL key follows, and from whose sets the
-early U12 ROM, the Gold battery RAM image and the MultiKey dumps come; the DS1991
-dumps are in keyflasher's format. Modelled on PeepeeBox, a sibling fork for the
+early U12 ROM and the Gold battery RAM image come. Key dumps are in MAME's
+MultiKey and keyflasher's DS1991 formats; telling which release a DS1991 dump is
+for follows keyflasher's DS91Decrypter. Modelled on PeepeeBox, a sibling fork for the
 funworld Photo Play cabinets, from which the toolbar coin and calibrate icons also
 come.
 

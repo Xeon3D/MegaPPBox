@@ -484,6 +484,7 @@ MainWindow::MainWindow(QWidget *parent)
                 if (!refs.isEmpty())
                     fitKey(refs.first());
             });
+            connect(keyMenu->addAction(tr("Keys...")), &QAction::triggered, this, [this]() { mt_show_keys(this); });
             connect(keyMenu->addAction(tr("Other key file...")), &QAction::triggered, this, [this, fitKey]() {
                 QString fn = QFileDialog::getOpenFileName(this, tr("Fit your own key dump"), QString::fromUtf8(usr_path),
                                                           tr("Key dumps (*)"));
