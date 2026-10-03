@@ -134,9 +134,10 @@ in keyflasher's "full" format, `<family>_full_<ROM ID>`; a 192-byte file is a
 DS1205 MultiKey, `<family>_multikey_<part>` (MAME's `multikey` dumps). Two
 families need a word:
 
-* **MCROWN**: Crown V16 checks the key's serial range. The Canadian key
-  (`6D000000CB053702`, an early family-02 part) is outside it ("Key range
-  mismatch"); the USA-STD key (`FF004000036F1F82`) is in it.
+* **MCROWN**: Crown V16 checks the key's serial range. Both bundled keys,
+  USA-STD (`FF004000036F1F82`) and Canada (`0700400003C4D082`), are in it
+  (an earlier Canadian dump, `6D000000CB053702`, an early family-02 part, was
+  not: "Key range mismatch").
 * **MRUBY2**: Ruby 2 (V11) derives its passwords like keyflasher's MRUBY family
   but without the XOR on the password seeds. `MRUBY2_full_EC00400000E98382` is
   the SA3061 dump re-keyed that way; the MRUBY dump's ROM ID is made up, so it
