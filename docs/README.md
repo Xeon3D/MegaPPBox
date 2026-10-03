@@ -1,8 +1,9 @@
 # MegaPPBox documentation
 
 MegaPPBox runs untouched Merit Megatouch XL and MAXX disk and CD images. This
-page is what *Help → Documentation* opens; the [project README](../README.md)
-covers the hardware in more depth.
+page is what *Help → Documentation* opens; the [README](../README.md) walks
+through the first start step by step, and the [technical notes](technical.md)
+cover the hardware in more depth.
 
 ## Getting started
 
@@ -119,7 +120,9 @@ change.
 | Operator Setup (spanner) | the setup button inside the cabinet |
 | Calibrate (crosshair) | the touch-screen calibration button |
 
-The key is in the *Tools* menu too. The touch screen is the mouse. A new Linux MAXX image restarts once on its first
+The key is in the *Tools* menu too. The status bar shows the profile in use,
+the fitted key (click it to change it) and the emulation speed. The touch screen
+is the mouse. A new Linux MAXX image restarts once on its first
 boot (and after a hardware change), then asks for touch calibration.
 
 The MAXX I/O board's PC Card slots are there (a Cirrus PD6722, both slots
