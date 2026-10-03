@@ -39,8 +39,8 @@ MegaPPBox.exe
 roms\        the ROM set (board and video BIOSes, the I/O board ROM, settled CMOS)
 ```
 
-The security keys are built into `MegaPPBox.exe`; a `keys\` folder is only
-needed for dumps of your own.
+Every release also needs a dump of its security key, which MegaPPBox does not
+include: see [Security keys](#security-keys).
 
 Run `MegaPPBox.exe`. The first time, the **Machine Manager** opens: point it at a
 folder of images (it searches subfolders too), pick one and press **Run**. It
@@ -125,23 +125,27 @@ drive at Turbo, a floppy drive (if you fit one) with turbo timings.
 Security keys
 -------------
 
-The key dumps in the repository's `keys\` (listed in `keys\keys.txt`) are built
-into the executable and offered by release and territory, e.g. *MAXX Jade (USA) 1*
-or *XL 6000*; the Machine Manager picks the one that suits the image. *Other key
-file…* in the key menu (status bar) fits a dump of your own, and dumps in a
-`keys\` folder next to the executable are listed too. A 264-byte file is a DS1991
-in keyflasher's "full" format, `<family>_full_<ROM ID>`; a 192-byte file is a
-DS1205 MultiKey, `<family>_multikey_<part>` (MAME's `multikey` dumps). Two
-families need a word:
+MegaPPBox emulates the key on the Merit I/O board, but the key's contents come
+from a dump of a real one, and **none are included**. Import yours with
+**Import key…** in the Machine Manager (or *Import key...* in the key menu on
+the status bar): a 264-byte file is a DS1991 in keyflasher's "full" format, a
+192-byte file a DS1205 MultiKey (MAME's `multikey` dumps). The release a dump
+is for is read from the dump itself (the cipher and signature that decrypt it,
+as keyflasher and the MTKeyWork study found them), and the dump is copied into
+the `keys\` folder next to the executable as `<family>_full_<ROM ID>` or
+`<family>_multikey_<part>`; the Machine Manager then fits it to every image of
+that release. MAXX and XL 6000 dumps share a format, so for those the import
+asks, unless the file name already says. *Other key file…* fits a dump from
+anywhere without copying it. See [`keys/README.md`](keys/README.md) for the
+families, and for building dumps into a local build.
 
-* **MCROWN**: Crown V16 checks the key's serial range. Both bundled keys,
-  USA-STD (`FF004000036F1F82`) and Canada (`0700400003C4D082`), are in it
-  (an earlier Canadian dump, `6D000000CB053702`, an early family-02 part, was
-  not: "Key range mismatch").
+Two families need a word:
+
+* **MCROWN**: Crown V16 checks the key's serial range ("Key range mismatch"):
+  early family-02 parts are outside it.
 * **MRUBY2**: Ruby 2 (V11) derives its passwords like keyflasher's MRUBY family
-  but without the XOR on the password seeds. `MRUBY2_full_EC00400000E98382` is
-  the SA3061 dump re-keyed that way; the MRUBY dump's ROM ID is made up, so it
-  fails the range check.
+  but without the XOR on the password seeds, so a Ruby 2 dump re-keyed with
+  keyflasher's MRUBY rules fails.
 
 How images are identified
 -------------------------

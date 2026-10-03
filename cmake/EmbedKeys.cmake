@@ -1,11 +1,19 @@
 #
 # MegaPPBox: build the security key dumps listed in keys/keys.txt into the
 # executable (megatouch_keys.c: one byte array per dump, plus its name).
+# The repository carries no dumps (keys/README.md): without a local keys.txt
+# nothing is built in, and users import their own.
 #
 #   megappbox_embed_keys(<keys dir> <output .c>)
 #
 function(megappbox_embed_keys KEYS_DIR OUT_C)
-    file(STRINGS "${KEYS_DIR}/keys.txt" _lines)
+    set(_lines "")
+    if(EXISTS "${KEYS_DIR}/keys.txt")
+        file(STRINGS "${KEYS_DIR}/keys.txt" _lines)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KEYS_DIR}/keys.txt")
+    else()
+        message(STATUS "MegaPPBox: no keys/keys.txt, no keys built in")
+    endif()
     set(_arrays "")
     set(_table "")
     set(_n 0)
@@ -36,7 +44,6 @@ function(megappbox_embed_keys KEYS_DIR OUT_C)
         string(APPEND _table "    { \"${_file}\", \"${_name}\", key_${_n}, ${_len} },\n")
         math(EXPR _n "${_n} + 1")
     endforeach()
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${KEYS_DIR}/keys.txt")
     set(_src "/* Generated from keys/keys.txt by cmake/EmbedKeys.cmake -- do not edit. */\n")
     string(APPEND _src "#include <stdint.h>\n#include <stddef.h>\n#include <86box/megatouch_keys.h>\n\n")
     string(APPEND _src "${_arrays}\nconst mt_builtin_key_t mt_builtin_keys[] = {\n${_table}")

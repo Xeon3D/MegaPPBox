@@ -30,8 +30,10 @@
 #include <QFormLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QProgressDialog>
 #include <QPushButton>
 #include <QSettings>
@@ -43,6 +45,7 @@ extern "C" {
 #include <86box/86box.h>
 #include <86box/config.h>
 #include <86box/megatouch.h>
+#include <86box/megatouch_keys.h>
 }
 
 namespace {
@@ -59,6 +62,158 @@ profileName(int p)
 
 } // namespace
 
+/* ---- Importing: copies of the user's keys and images, never the originals moved ---- */
+
+QStringList
+mt_import_keys(QWidget *parent)
+{
+    QStringList imported;
+    const QStringList files = QFileDialog::getOpenFileNames(parent, QObject::tr("Import key dumps"), QString(),
+                                                            QObject::tr("Key dumps (*)"));
+    if (files.isEmpty())
+        return imported;
+    QDir().mkpath(mt_keys_dir());
+
+    QStringList report;
+    for (const QString &fn : files) {
+        const QString base = QFileInfo(fn).fileName();
+        QFile         f(fn);
+        if (!f.open(QIODevice::ReadOnly) || !mt_key_kind((size_t) f.size())) {
+            report << QObject::tr("%1: not a key dump (a keyflasher DS1991 dump is 264 bytes, a DS1205 MultiKey 192).")
+                          .arg(base);
+            continue;
+        }
+        const QByteArray d = f.readAll();
+        const auto      *data = reinterpret_cast<const uint8_t *>(d.constData());
+
+        /* Which release: read from the dump itself.  A family the file name
+           gives settles a dump two releases could share. */
+        const char *cand[8];
+        const int   n     = mt_key_identify(data, (size_t) d.size(), cand, 8);
+        const auto *named = mt_key_family_from_name(base.toUtf8().constData());
+        QString     prefix;
+        for (int i = 0; i < n; i++)
+            if (named && !strcmp(cand[i], named->prefix))
+                prefix = QString::fromLatin1(cand[i]);
+        if (prefix.isEmpty() && (n == 1))
+            prefix = QString::fromLatin1(cand[0]);
+        if (prefix.isEmpty()) {
+            /* Shared by two releases, or a key this build cannot read: ask. */
+            QStringList items;
+            QStringList prefixes;
+            for (int i = 0; i < n; i++)
+                prefixes << QString::fromLatin1(cand[i]);
+            if (!n)
+                for (const mt_key_family_t *k = mt_key_families; k->prefix; k++)
+                    prefixes << QString::fromLatin1(k->prefix);
+            for (const QString &p : prefixes)
+                items << QString("%1 (%2)").arg(QString::fromUtf8(mt_key_family_find(p.toLatin1().constData())->releases), p);
+            bool          ok = false;
+            const QString pick = QInputDialog::getItem(parent, QObject::tr("Import key"),
+                                                       n ? QObject::tr("%1 fits more than one release. Which is it for?").arg(base)
+                                                         : QObject::tr("%1 is not a key this version can read. Which release is it for?").arg(base),
+                                                       items, 0, false, &ok);
+            if (!ok)
+                continue;
+            prefix = prefixes.value(items.indexOf(pick));
+        }
+
+        char name[64];
+        if (!mt_key_file_name(data, (size_t) d.size(), prefix.toLatin1().constData(), name, sizeof(name)))
+            continue;
+        const QString dest = QDir(mt_keys_dir()).filePath(QString::fromLatin1(name));
+        QFile         out(dest);
+        if (QFileInfo::exists(dest)) {
+            QFile old(dest);
+            if (old.open(QIODevice::ReadOnly) && (old.readAll() == d)) {
+                report << QObject::tr("%1: already imported, as %2.").arg(base, QString::fromLatin1(name));
+                imported << mt_own_key_ref(QString::fromLatin1(name));
+                continue;
+            }
+        }
+        if (!out.open(QIODevice::WriteOnly) || (out.write(d) != d.size())) {
+            report << QObject::tr("%1: could not write %2.").arg(base, QDir::toNativeSeparators(dest));
+            continue;
+        }
+        report << QObject::tr("%1: %2.").arg(base, mt_key_display(QString::fromLatin1(name)));
+        imported << mt_own_key_ref(QString::fromLatin1(name));
+    }
+    QMessageBox::information(parent, QObject::tr("Import key"),
+                             QObject::tr("Keys go to %1.").arg(QDir::toNativeSeparators(mt_keys_dir())) + "\n\n" + report.join('\n'));
+    return imported;
+}
+
+QStringList
+mt_import_images(QWidget *parent, const QString &dir)
+{
+    QStringList imported;
+    const QStringList files = QFileDialog::getOpenFileNames(parent, QObject::tr("Import Megatouch images"), QString(),
+                                                            QObject::tr("Disk and CD images (%1);;All files (*)").arg(imageFilters.join(' ')));
+    if (files.isEmpty())
+        return imported;
+    QDir().mkpath(dir);
+
+    qint64 total = 0;
+    for (const QString &fn : files)
+        total += QFileInfo(fn).size();
+    QProgressDialog progress(QObject::tr("Copying images…"), QObject::tr("Stop"), 0, 1000, parent);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(0);
+
+    QStringList report;
+    qint64      done = 0;
+    for (const QString &fn : files) {
+        const QFileInfo src(fn);
+        const QString   dest = QDir(dir).filePath(src.fileName());
+        if (QFileInfo(dest).absoluteFilePath().compare(src.absoluteFilePath(), Qt::CaseInsensitive) == 0) {
+            report << QObject::tr("%1: already in the folder.").arg(src.fileName());
+            done += src.size();
+            continue;
+        }
+        if (QFileInfo::exists(dest)) {
+            report << QObject::tr("%1: a file of that name is already in the folder; not copied.").arg(src.fileName());
+            done += src.size();
+            continue;
+        }
+        QFile in(fn);
+        QFile out(dest + ".part");
+        if (!in.open(QIODevice::ReadOnly) || !out.open(QIODevice::WriteOnly)) {
+            report << QObject::tr("%1: could not be copied.").arg(src.fileName());
+            continue;
+        }
+        progress.setLabelText(QObject::tr("Copying %1…").arg(src.fileName()));
+        bool       ok = true;
+        QByteArray buf;
+        while (!in.atEnd()) {
+            buf = in.read(8 << 20);
+            if (buf.isEmpty() || (out.write(buf) != buf.size())) {
+                ok = false;
+                break;
+            }
+            done += buf.size();
+            progress.setValue(total ? (int) (done * 1000 / total) : 0);
+            if (progress.wasCanceled()) {
+                ok = false;
+                break;
+            }
+        }
+        out.close();
+        if (!ok || !QFile::rename(dest + ".part", dest)) {
+            QFile::remove(dest + ".part");
+            report << (progress.wasCanceled() ? QObject::tr("%1: stopped.").arg(src.fileName())
+                                              : QObject::tr("%1: could not be copied.").arg(src.fileName()));
+            if (progress.wasCanceled())
+                break;
+            continue;
+        }
+        imported << dest;
+    }
+    progress.setValue(1000);
+    if (!report.isEmpty())
+        QMessageBox::information(parent, QObject::tr("Import images"), report.join('\n'));
+    return imported;
+}
+
 MachineManager::MachineManager(QWidget *parent)
     : QDialog(parent)
 {
@@ -71,10 +226,13 @@ MachineManager::MachineManager(QWidget *parent)
     folder->setPlaceholderText(tr("Folder with Megatouch disk (.img) and CD (.iso) images"));
     auto *browseBtn = new QPushButton(tr("&Browse…"));
     auto *scanBtn   = new QPushButton(tr("&Scan"));
+    auto *importBtn = new QPushButton(tr("&Import images…"));
+    importBtn->setToolTip(tr("Copy disk (.img) and CD (.iso) images into this folder"));
     top->addWidget(new QLabel(tr("Images:")));
     top->addWidget(folder, 1);
     top->addWidget(browseBtn);
     top->addWidget(scanBtn);
+    top->addWidget(importBtn);
 
     tree = new QTreeWidget;
     tree->setColumnCount(ColCount);
@@ -94,6 +252,11 @@ MachineManager::MachineManager(QWidget *parent)
     board->addItem(tr("The profile's own (ASUS TX97, i430TX)"), MT_BOARD_DEFAULT);
     board->addItem(tr("ASUS P/I-P55TVP4 (i430VX)"), MT_BOARD_P55TVP4);
     key     = new QComboBox;
+    auto *importKeyBtn = new QPushButton(tr("Import &key…"));
+    importKeyBtn->setToolTip(tr("Copy key dumps into the keys folder; the release each is for is read from the dump"));
+    auto *keyRow = new QHBoxLayout;
+    keyRow->addWidget(key, 1);
+    keyRow->addWidget(importKeyBtn);
     modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
     networkBox = new QCheckBox;
     showNetworkCard(-1);
@@ -116,7 +279,7 @@ MachineManager::MachineManager(QWidget *parent)
     auto *form = new QFormLayout;
     form->addRow(tr("Hardware profile:"), profile);
     form->addRow(tr("Motherboard:"), board);
-    form->addRow(tr("Key:"), key);
+    form->addRow(tr("Key:"), keyRow);
     form->addRow(tr("Options:"), modemRow);
     form->addRow(QString(), networkRow);
     form->addRow(details);
@@ -139,6 +302,20 @@ MachineManager::MachineManager(QWidget *parent)
 
     connect(browseBtn, &QPushButton::clicked, this, &MachineManager::browse);
     connect(scanBtn, &QPushButton::clicked, this, &MachineManager::scan);
+    connect(importBtn, &QPushButton::clicked, this, [this]() {
+        if (folder->text().trimmed().isEmpty() || !QFileInfo(folder->text().trimmed()).isDir()) {
+            browse();
+            if (folder->text().trimmed().isEmpty())
+                return;
+        }
+        if (!mt_import_images(this, folder->text().trimmed()).isEmpty())
+            scan();
+    });
+    connect(importKeyBtn, &QPushButton::clicked, this, [this]() {
+        /* The current image takes its release's key, unless the user chose one. */
+        if (!mt_import_keys(this).isEmpty())
+            selectionChanged();
+    });
     connect(showAll, &QCheckBox::toggled, this, &MachineManager::populate);
     connect(tree, &QTreeWidget::itemSelectionChanged, this, &MachineManager::selectionChanged);
     connect(tree, &QTreeWidget::itemDoubleClicked, this, [this]() { if (run->isEnabled()) accept(); });
@@ -411,7 +588,7 @@ MachineManager::selectionChanged()
     if (!e->id.note.isEmpty())
         lines << e->id.note;
     if (ok && (key->currentIndex() == 0) && !e->id.keyPrefix.isEmpty())
-        lines << tr("No %1 key is built in; fit your own dump.").arg(e->id.keyPrefix);
+        lines << tr("No %1 key yet: Import key… copies in a dump of one.").arg(e->id.keyPrefix);
     details->setText(lines.join(' '));
 }
 

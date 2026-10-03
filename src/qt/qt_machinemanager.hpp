@@ -16,6 +16,7 @@
 #include <QDialog>
 #include <QList>
 #include <QString>
+#include <QStringList>
 
 #include "qt_megatouch_ident.hpp"
 
@@ -26,6 +27,12 @@ class QLineEdit;
 class QPushButton;
 class QTreeWidget;
 class QTreeWidgetItem;
+
+/* Import the user's key dumps into the keys folder (named for the release
+   each is for, read from the dump) and disk/CD images into dir; copies,
+   never moves.  Return the key references / image paths imported. */
+QStringList mt_import_keys(QWidget *parent);
+QStringList mt_import_images(QWidget *parent, const QString &dir);
 
 class MachineManager : public QDialog {
     Q_OBJECT

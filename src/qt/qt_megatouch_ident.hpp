@@ -55,7 +55,14 @@ QList<MtKeyChoice> mt_key_choices();
 /* How a key reference is shown: the built-in's name, else the file name. */
 QString mt_key_display(const QString &ref);
 
-/* The built-in key that suits the identification ("builtin:<id>"), or empty. */
+/* The key that suits the identification: a built-in one ("builtin:<id>"),
+   else an imported dump in the keys folder (keys/<prefix>_full_...), or
+   empty. */
 QString mt_default_key(const MtIdent &id);
+
+/* The cabinet folder's keys folder, where imported dumps go, and the
+   reference to one of them. */
+QString mt_keys_dir();
+QString mt_own_key_ref(const QString &file_name);
 
 #endif

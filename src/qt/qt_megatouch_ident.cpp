@@ -31,6 +31,8 @@
  */
 #include "qt_megatouch_ident.hpp"
 
+#include <cstring>
+
 #include <QByteArray>
 #include <QCryptographicHash>
 #include <QDir>
@@ -635,19 +637,56 @@ mt_identify(const QString &path)
 }
 
 QString
+mt_keys_dir()
+{
+    return QDir(QString::fromUtf8(usr_path)).filePath("keys");
+}
+
+QString
+mt_own_key_ref(const QString &file_name)
+{
+    /* Relative to the cabinet folder, so the folder can move. */
+    return QDir::toNativeSeparators(QStringLiteral("keys/") + file_name);
+}
+
+namespace {
+
+/* The dumps in the keys folder (264-byte DS1991 or 192-byte DS1205), by name. */
+QFileInfoList
+own_keys()
+{
+    QFileInfoList list;
+    for (const QFileInfo &fi : QDir(mt_keys_dir()).entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase))
+        if (mt_key_kind((size_t) fi.size()))
+            list.append(fi);
+    return list;
+}
+
+bool
+names_family(const QString &file_name, const QString &prefix)
+{
+    return file_name.startsWith(prefix + "_full_", Qt::CaseInsensitive) ||
+           file_name.startsWith(prefix + "_multikey_", Qt::CaseInsensitive);
+}
+
+} // namespace
+
+QString
 mt_default_key(const MtIdent &id)
 {
     if (id.keyPrefix.isEmpty())
         return {};
 
-    /* keys.txt lists the dump known to work with each release first.
-       DS1991 dumps are <prefix>_full_<ROM ID>; DS1205 MultiKeys
+    /* A built-in key first (a local keys.txt lists the dump known to work
+       with each release first), then the user's own, imported dumps.  DS1991
+       dumps are <prefix>_full_<ROM ID>; DS1205 MultiKeys
        <prefix>_multikey_<part>. */
-    for (const mt_builtin_key_t *k = mt_builtin_keys; k->id; k++) {
-        const QString kid = QString::fromLatin1(k->id);
-        if (kid.startsWith(id.keyPrefix + "_full_") || kid.startsWith(id.keyPrefix + "_multikey_"))
-            return QStringLiteral(MT_BUILTIN_PREFIX) + kid;
-    }
+    for (const mt_builtin_key_t *k = mt_builtin_keys; k->id; k++)
+        if (names_family(QString::fromLatin1(k->id), id.keyPrefix))
+            return QStringLiteral(MT_BUILTIN_PREFIX) + QString::fromLatin1(k->id);
+    for (const QFileInfo &fi : own_keys())
+        if (names_family(fi.fileName(), id.keyPrefix))
+            return mt_own_key_ref(fi.fileName());
     return {};
 }
 
@@ -657,12 +696,8 @@ mt_key_choices()
     QList<MtKeyChoice> list;
     for (const mt_builtin_key_t *k = mt_builtin_keys; k->id; k++)
         list.append({ QStringLiteral(MT_BUILTIN_PREFIX) + QString::fromLatin1(k->id), QString::fromUtf8(k->name) });
-
-    const QFileInfoList own = QDir(QDir(QString::fromUtf8(usr_path)).filePath("keys"))
-                                  .entryInfoList(QDir::Files, QDir::Name | QDir::IgnoreCase);
-    for (const QFileInfo &fi : own)
-        if ((fi.size() == 264) || (fi.size() == 192))
-            list.append({ QString("keys\\") + fi.fileName(), fi.fileName() });
+    for (const QFileInfo &fi : own_keys())
+        list.append({ mt_own_key_ref(fi.fileName()), mt_key_display(fi.fileName()) });
     return list;
 }
 
@@ -673,5 +708,12 @@ mt_key_display(const QString &ref)
         return {};
     if (const mt_builtin_key_t *k = mt_builtin_key_find(ref.toUtf8().constData()))
         return QString::fromUtf8(k->name);
-    return QFileInfo(ref).fileName();
+    /* An imported dump: its releases, and which key it is. */
+    const QString name = QFileInfo(QString(ref).replace('\\', '/')).fileName();
+    if (const mt_key_family_t *f = mt_key_family_from_name(name.toUtf8().constData())) {
+        QString which = name.mid((int) strlen(f->prefix) + 1);
+        which.remove(QRegularExpression(QStringLiteral("^(full|multikey)_")));
+        return QString("%1 (%2)").arg(QString::fromUtf8(f->releases), which);
+    }
+    return name;
 }

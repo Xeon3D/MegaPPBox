@@ -478,6 +478,12 @@ MainWindow::MainWindow(QWidget *parent)
                 connect(a, &QAction::triggered, this, [fitKey, ref]() { fitKey(ref); });
             }
             keyMenu->addSeparator();
+            /* Copied into the keys folder, named for its release; fitted at once. */
+            connect(keyMenu->addAction(tr("Import key...")), &QAction::triggered, this, [this, fitKey]() {
+                const QStringList refs = mt_import_keys(this);
+                if (!refs.isEmpty())
+                    fitKey(refs.first());
+            });
             connect(keyMenu->addAction(tr("Other key file...")), &QAction::triggered, this, [this, fitKey]() {
                 QString fn = QFileDialog::getOpenFileName(this, tr("Fit your own key dump"), QString::fromUtf8(usr_path),
                                                           tr("Key dumps (*)"));

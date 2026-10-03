@@ -259,6 +259,295 @@ mt_builtin_key_find(const char *ref)
     return NULL;
 }
 
+/* The key families, as the releases' key checks know them (keyflasher's
+   names).  Some releases share a family: one key runs both. */
+const mt_key_family_t mt_key_families[] = {
+    { "XLR1",      "MegaTouch XL (R1)"                },
+    { "XL5K",      "MegaTouch XL Super 5000"          },
+    { "XL6K",      "MegaTouch XL 6000"                },
+    { "XGOLDCD",   "MegaTouch XL Gold"                },
+    { "XPLAT",     "XL Platinum, Double Platinum"     },
+    { "XTIT",      "XL Titanium, Titanium 2"          },
+    { "M1",        "MAXX"                             },
+    { "M2K",       "MAXX 2000, 2000 Plus"             },
+    { "MDIAMOND",  "MAXX Diamond, Double Diamond"     },
+    { "MEMERALD",  "MAXX Emerald, Emerald 2"          },
+    { "MRUBY",     "MAXX Ruby"                        },
+    { "MRUBY2",    "MAXX Ruby 2"                      },
+    { "MSAPPHIRE", "MAXX Sapphire, Sapphire 2"        },
+    { "MJADE",     "MAXX Jade, Jade 2"                },
+    { "MCROWN",    "MAXX Crown"                       },
+    { NULL,        NULL                               }
+};
+
+int
+mt_key_kind(size_t len)
+{
+    return (len == 264) ? MT_KEY_DS1991 : (len == 192) ? MT_KEY_MULTIKEY : 0;
+}
+
+const mt_key_family_t *
+mt_key_family_find(const char *prefix)
+{
+    for (const mt_key_family_t *f = mt_key_families; prefix && f->prefix; f++)
+        if (!strcmp(f->prefix, prefix))
+            return f;
+    return NULL;
+}
+
+/* The longest prefix wins: MRUBY2_... is Ruby 2's, not Ruby's. */
+const mt_key_family_t *
+mt_key_family_from_name(const char *file_name)
+{
+    const mt_key_family_t *best = NULL;
+
+    for (const mt_key_family_t *f = mt_key_families; file_name && f->prefix; f++) {
+        const size_t n = strlen(f->prefix);
+        if (!strncasecmp(file_name, f->prefix, n) && (file_name[n] == '_') &&
+            (!best || (n > strlen(best->prefix))))
+            best = f;
+    }
+    return best;
+}
+
+/* Which release a dump is for.  A DS1991 dump (keyflasher's: 3 subkeys of
+   [ID 8][password 8][data 48], a 64-byte scratchpad, the ROM ID) is enciphered
+   with its release's scheme, keyed by the ROM ID (keyflasher's DS91Decrypter
+   and the per-release parameters found by the MTKeyWork study).  Only the
+   right scheme gives a plausible first subkey -- a Merit part number "SAnnnnnn"
+   and, in the second subkey's ID, a date -- and the release's signature in
+   the first subkey's data then names it; where two releases share a scheme
+   and a signature, the part number decides.  A DS1205 MultiKey's subkey names
+   are not enciphered: the first is the part number. */
+static int
+mt_lm(int scheme, const uint8_t *k, int *lm)
+{
+    switch (scheme) {
+        case 0: /* M1 (XL R1 .. MAXX 3.06) */
+            lm[0] = lm[1] = lm[2] = lm[3] = 0;
+            break;
+        case 1: /* XL Gold, MAXX 2000 */
+            lm[0] = k[2] ^ ((k[0] + k[1]) | k[4]);
+            lm[1] = k[2] | ((k[0] - k[1]) ^ k[3]);
+            lm[2] = k[1] & (k[3] + k[2] + k[4]);
+            lm[3] = k[4] | ((k[3] + k[1]) - k[2]);
+            break;
+        case 2: /* XL Platinum, MAXX Diamond */
+            lm[0] = k[2] ^ ((k[2] + k[1]) | k[4]);
+            lm[1] = k[2] | ((k[3] - k[0]) ^ k[3]);
+            lm[2] = k[1] & (k[3] + k[1] + k[4]);
+            lm[3] = k[4] | ((k[0] + k[1]) - k[2]);
+            break;
+        case 3: /* XL Titanium, MAXX Emerald */
+            lm[0] = k[3] ^ ((k[1] + k[4]) | k[2]);
+            lm[1] = k[1] | ((k[2] - k[3]) ^ k[4]);
+            lm[2] = k[4] ^ (k[3] + k[2] + k[1]);
+            lm[3] = k[2] | ((k[4] + k[1]) - k[3]);
+            break;
+        case 4: /* MAXX Ruby 2 */
+            lm[0] = ((k[1] + k[3]) | k[4]) ^ k[3];
+            lm[1] = ((k[3] - k[4]) ^ k[3]) | k[1];
+            lm[2] = (k[2] + k[1] + k[3]) ^ k[4];
+            lm[3] = ((k[4] + k[2]) - k[1]) | k[2];
+            break;
+        case 5: /* MAXX Sapphire */
+            lm[0] = ((k[1] ^ k[3]) - k[5]) + k[3];
+            lm[1] = ((k[0] - k[5]) - k[3]) - k[1];
+            lm[2] = ((k[2] - k[1]) + k[3]) ^ k[5];
+            lm[3] = ((k[5] ^ k[2]) + k[1]) ^ k[2];
+            break;
+        case 6: /* MAXX Jade */
+            lm[0] = ((k[1] ^ k[5]) - k[3]) + k[2];
+            lm[1] = ((k[1] - k[5]) - k[4]) - k[2];
+            lm[2] = k[5] ^ k[1];
+            lm[3] = k[2] ^ k[4];
+            break;
+        case 7: /* MAXX Crown */
+            lm[0] = ((k[3] - k[4]) - k[5]) ^ k[1] ^ 0x7f;
+            lm[1] = (((k[1] + k[2]) - k[3]) - k[4]) ^ 0xf3;
+            lm[2] = (k[4] + 0xbc) ^ (k[2] + k[2] + k[1]);
+            lm[3] = k[4] + k[5] + k[1] + k[4] + 0x7f;
+            break;
+        default:
+            return 0;
+    }
+    for (int i = 0; i < 4; i++)
+        lm[i] &= 0xff;
+    return 1;
+}
+
+#define MT_SCHEMES 8
+static const struct {
+    uint8_t inc;
+    uint8_t magic[4];
+    int     gen3; /* the signature at D0+0x28, not D0+0 */
+} mt_schemes[MT_SCHEMES] = {
+    { 0x00, { 0x00, 0x00, 0x00, 0x00 }, 0 },
+    { 0x31, { 0x55, 0x54, 0x53, 0x52 }, 0 },
+    { 0x31, { 0x55, 0x54, 0x53, 0x52 }, 0 },
+    { 0x31, { 0x73, 0x3c, 0xaa, 0xe7 }, 0 },
+    { 0x17, { 0x61, 0xe3, 0x5a, 0x13 }, 0 },
+    { 0x53, { 0xa7, 0x67, 0x9a, 0xaa }, 1 },
+    { 0x16, { 0xff, 0x35, 0x5a, 0x4b }, 1 },
+    { 0x16, { 0x12, 0x78, 0x37, 0xf3 }, 1 },
+};
+
+/* Scheme, signature (D0), part number prefix (NULL: any) -> families, best first. */
+static const struct {
+    int         scheme;
+    const char *sig;
+    const char *part;
+    const char *fam[2];
+} mt_key_rules[] = {
+    { 0, "1122334455667788", NULL,     { "XLR1", NULL } },
+    { 0, "5152535455667788", NULL,     { "XL5K", NULL } },
+    { 0, "5052535455667789", NULL,     { "M1", "XL6K" } },
+    { 1, "5052535455667789", "SA3039", { "XGOLDCD", NULL } },
+    { 1, "5052535455667789", "SA3035", { "M2K", NULL } },
+    { 1, "5052535455667789", NULL,     { "M2K", "XGOLDCD" } },
+    { 2, "5052535455667789", "SA3046", { "XPLAT", NULL } },
+    { 2, "5052535455667789", "SA3042", { "MDIAMOND", NULL } },
+    { 2, "5052535455667789", NULL,     { "MDIAMOND", "XPLAT" } },
+    { 3, "E842088667400282", NULL,     { "XTIT", NULL } },
+    { 3, "DD62104321100293", NULL,     { "MEMERALD", NULL } },
+    { 4, "DE62104321100293", NULL,     { "MRUBY2", "MRUBY" } },
+    { 5, "1234567890ABCDEF", NULL,     { "MSAPPHIRE", NULL } },
+    { 6, "8723879FE2432498", NULL,     { "MJADE", NULL } },
+    { 7, "8723879FE2432498", NULL,     { "MCROWN", NULL } },
+};
+
+/* Subkey 0's ID and first 48 data bytes, and subkey 1's ID, deciphered. */
+static void
+mt_key_decipher(const uint8_t *d, int scheme, uint8_t *id0, uint8_t *d0, uint8_t *id1)
+{
+    uint8_t k[8];
+    int     lm[4];
+
+    for (int i = 0; i < 8; i++)
+        k[i] = d[263 - i]; /* the ROM ID, family code first */
+    mt_lm(scheme, k, lm);
+    for (int s = 0; s < 2; s++) {
+        int            seed = (mt_schemes[scheme].magic[s] + mt_schemes[scheme].inc * 8) & 0xff;
+        const uint8_t *src  = d + 64 * s;
+        uint8_t       *id   = s ? id1 : id0;
+        for (int i = 0; i < 8; i++) {
+            id[i] = (uint8_t) (((src[i] - seed) & 0xff) ^ lm[i % 4]);
+            seed  = (seed + mt_schemes[scheme].inc) & 0xff;
+        }
+        if (s)
+            break;
+        for (int i = 0; i < 48; i++) {
+            d0[i] = (uint8_t) (((src[16 + i] - seed) & 0xff) ^ lm[i % 4]);
+            seed  = (seed + mt_schemes[scheme].inc) & 0xff;
+        }
+    }
+}
+
+static int
+mt_key_plausible(const uint8_t *id0, const uint8_t *id1)
+{
+    if ((id0[0] != 'S') || (id0[1] != 'A'))
+        return 0;
+    for (int i = 2; i < 8; i++)
+        if ((id0[i] < '0') || (id0[i] > '9'))
+            return 0;
+    for (int i = 0; i < 8; i++) {
+        const int slash = (i == 2) || (i == 5);
+        if (slash ? (id1[i] != '/') : ((id1[i] < '0') || (id1[i] > '9')))
+            return 0;
+    }
+    return 1;
+}
+
+static int
+mt_key_add(const char **out, int n, int max, const char *fam)
+{
+    for (int i = 0; i < n; i++)
+        if (!strcmp(out[i], fam))
+            return n;
+    if (n < max)
+        out[n++] = fam;
+    return n;
+}
+
+int
+mt_key_identify(const uint8_t *d, size_t len, const char **out, int max)
+{
+    int n = 0;
+
+    if (mt_key_kind(len) == MT_KEY_MULTIKEY) {
+        static const struct {
+            const char *part;
+            const char *fam[2];
+        } multi[] = {
+            { "SA3022", { "XLR1", NULL } },
+            { "SA3008", { "XL5K", NULL } },
+            { "SA3019", { "XL6K", "XLR1" } },
+            { "SA3033", { "XGOLDCD", NULL } },
+        };
+        for (size_t r = 0; r < sizeof(multi) / sizeof(multi[0]); r++)
+            if (!memcmp(d, multi[r].part, 6))
+                for (int j = 0; (j < 2) && multi[r].fam[j]; j++)
+                    n = mt_key_add(out, n, max, multi[r].fam[j]);
+        return n;
+    }
+    if (mt_key_kind(len) != MT_KEY_DS1991)
+        return 0;
+
+    for (int s = 0; s < MT_SCHEMES; s++) {
+        uint8_t id0[8], d0[48], id1[8];
+        char    sig[17];
+        mt_key_decipher(d, s, id0, d0, id1);
+        if (!mt_key_plausible(id0, id1))
+            continue;
+        for (int i = 0; i < 8; i++)
+            snprintf(sig + 2 * i, 3, "%02X", d0[(mt_schemes[s].gen3 ? 0x28 : 0) + i]);
+        /* Rules with a part number first: they are the sure ones. */
+        for (int pass = 0; pass < 2; pass++)
+            for (size_t r = 0; r < sizeof(mt_key_rules) / sizeof(mt_key_rules[0]); r++) {
+                if ((mt_key_rules[r].scheme != s) || strcmp(mt_key_rules[r].sig, sig))
+                    continue;
+                if (pass ? (mt_key_rules[r].part != NULL)
+                         : ((mt_key_rules[r].part == NULL) || memcmp(id0, mt_key_rules[r].part, 6)))
+                    continue;
+                for (int j = 0; (j < 2) && mt_key_rules[r].fam[j]; j++)
+                    n = mt_key_add(out, n, max, mt_key_rules[r].fam[j]);
+                if (!pass)
+                    pass = 2; /* a part number match is the answer */
+                break;
+            }
+    }
+    return n;
+}
+
+int
+mt_key_file_name(const uint8_t *data, size_t len, const char *prefix, char *out, size_t out_len)
+{
+    const mt_key_family_t *f    = mt_key_family_find(prefix);
+    const int              kind = mt_key_kind(len);
+    char                   id[24];
+
+    if (!data || !f || !kind)
+        return 0;
+    if (kind == MT_KEY_DS1991) {
+        /* The ROM ID as keyflasher prints it: the last 8 bytes in order. */
+        for (int i = 0; i < 8; i++)
+            snprintf(id + 2 * i, 3, "%02X", data[256 + i]);
+        snprintf(out, out_len, "%s_full_%s", f->prefix, id);
+    } else {
+        /* The MultiKey's part number: its first subkey's name ("SA301901"). */
+        int n = 0;
+        for (int i = 0; i < 8; i++)
+            if (((data[i] >= '0') && (data[i] <= '9')) || ((data[i] >= 'A') && (data[i] <= 'Z')))
+                id[n++] = (char) data[i];
+        id[n] = '\0';
+        if (!n)
+            snprintf(id, sizeof(id), "%02X%02X%02X%02X", data[0], data[1], data[2], data[3]);
+        snprintf(out, out_len, "%s_multikey_%s", f->prefix, id);
+    }
+    return 1;
+}
+
 /* Test switches (MEGAPPBOX_MACHINE, _VIDEO, _NV_SEED): unset or empty = off. */
 static const char *
 mt_testenv(const char *name)

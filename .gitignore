@@ -77,3 +77,7 @@ CMakeLists.txt.user
 /build*.log
 
 __pycache__/
+
+# Security key dumps: never in the repository (keys/README.md)
+/keys/*
+!/keys/README.md

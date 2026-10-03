@@ -98,16 +98,17 @@ The profile in use is shown in the middle of the status bar.
 
 ## Security keys
 
-Every Megatouch release checks a Dallas security key on the I/O board. The
-known keys are built into MegaPPBox and named by release and territory, e.g.
-*MAXX Jade (USA) 1*, *MAXX Crown (Canada)*, *XL 6000*. The manager fits the one
-that suits the image.
+Every Megatouch release checks a Dallas security key on the I/O board.
+MegaPPBox includes no key dumps: import a dump of your key with **Import key…**
+in the Machine Manager (a 264-byte DS1991 "full" dump from keyflasher, or a
+192-byte DS1205 MultiKey dump). The release it is for is read from the dump,
+and it is copied into the `keys\` folder next to `MegaPPBox.exe`; from then on
+the manager fits it to every image of that release. MAXX and XL 6000 dumps
+share a format: the import asks which it is, unless the file name says.
 
 To change the key while a game runs, click **Key:** in the status bar. The
-list has the built-in keys, any dumps in a `keys\` folder next to
-`MegaPPBox.exe`, **Other key file…** for a dump of your own (264-byte DS1991
-"full" dumps from keyflasher, or 192-byte DS1205 MultiKey dumps), and
-**Remove key**. Games read the key at start-up: reset the machine after a
+list has the dumps in the `keys\` folder, **Import key...**, **Other key file…**
+for a dump used where it is (not copied), and **Remove key**. Games read the key at start-up: reset the machine after a
 change.
 
 ## Cabinet controls

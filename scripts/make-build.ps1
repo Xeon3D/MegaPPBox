@@ -8,8 +8,8 @@
             BUILD.txt
 
     A folder is one cabinet: its settings (MegaPPBox.cfg) and CMOS (nvr\) are
-    kept inside it, so folders do not share state.  The security keys are
-    built into the executable; a keys\ folder is only for the user's own.  The manager
+    kept inside it, so folders do not share state.  No security keys
+    are included: the user imports theirs into keys\ (keys/README.md).  The manager
     runs the images it lists in place, and games write to their disks
     (NVRAM.DAT, DEBUG.DAT), so point -Library at working copies, never at
     original images.
