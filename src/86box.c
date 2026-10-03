@@ -1733,6 +1733,7 @@ pc_reset_hard_init(void)
     /* Reset and reconfigure the serial ports. */
     serial_standalone_init();
     serial_devices_init();
+    megatouch_machine_built();
 
     /* Reset and reconfigure the Network Card layer. */
     network_reset();

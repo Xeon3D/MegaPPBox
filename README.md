@@ -49,10 +49,12 @@ again from the toolbar (or *Tools → Machine Manager…*) to switch, which rebu
 the machine on a hard reset. The manager reads the folder afresh each time it
 opens.
 
-Two options are kept per image, both off by default: **Modem on COM2** (an
-ActionTec 56K, as the MAXX TournaMAXX/MegaNET kits fitted; it can dial a TCP
-host, such as a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
-server, which brings the DOS releases' tournaments back) and, on MAXX,
+Two options are kept per image: **Modem on COM2** (an ActionTec 56K, as the
+MAXX TournaMAXX/MegaNET kits fitted; on by default from MAXX Diamond on, which
+have an on-line client; it can dial a TCP host, such as a
+[TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival) server,
+which brings the DOS releases' tournaments back; it can be plugged in or out,
+and its line changed, with the cabinet running) and, off by default, on MAXX,
 **Network card**: on MAXX (Old) an ISA TRENDnet TE-16XP at 0x340, IRQ 11 — the
 card every DOS release from MAXX 2K on loads its ODI driver for (the later
 releases also knew the newer TE-16PT; 2K did not, so the one card that works
@@ -110,7 +112,8 @@ MicroTouch touch screen on COM1 and a PS/2 keyboard. XL disks appear as a
   PD6722 at 0x3E0, both empty), which the Linux releases' PC Card services and
   MAXX 1st's CardSoft look for. COM2 is left out unless the image has the
   modem fitted (the Linux releases' modem probe waits forever on a silent
-  port). A Linux release rebooting itself resets the
+  port); its UART is still built, hidden, so the modem can be plugged in
+  while the cabinet runs. A Linux release rebooting itself resets the
   whole board, as the reset line does; the TX97's own warm boot hangs there.
   The releases write the cabinet's own board settings into the CMOS, so each
   profile's settled CMOS is put back at every start (on XL too: the three XL

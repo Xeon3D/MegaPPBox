@@ -16,6 +16,7 @@
  *          later.  See COPYING for more information.
  */
 #include "qt_machinemanager.hpp"
+#include "qt_networksettings.hpp"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -94,7 +95,20 @@ MachineManager::MachineManager(QWidget *parent)
     board->addItem(tr("ASUS P/I-P55TVP4 (i430VX)"), MT_BOARD_P55TVP4);
     key     = new QComboBox;
     modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
-    networkBox = new QCheckBox(tr("Network card: TRENDnet TE-16XP on MAXX (Old), RTL8139 on MAXX (New) — NAT, or Mega-Link via Tools > Network settings..."));
+    networkBox = new QCheckBox;
+    showNetworkCard(-1);
+    /* What they plug into: the modem's telephone line (every image), the
+       card's network -- NAT, or Mega-Link (this image). */
+    modemCfg   = new QPushButton(tr("Modem settings..."));
+    networkCfg = new QPushButton(tr("Network settings..."));
+    modemCfg->setEnabled(false);
+    networkCfg->setEnabled(false);
+    auto *modemRow = new QHBoxLayout;
+    modemRow->addWidget(modemBox, 1);
+    modemRow->addWidget(modemCfg);
+    auto *networkRow = new QHBoxLayout;
+    networkRow->addWidget(networkBox, 1);
+    networkRow->addWidget(networkCfg);
     details = new QLabel;
     details->setWordWrap(true);
     details->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -103,8 +117,8 @@ MachineManager::MachineManager(QWidget *parent)
     form->addRow(tr("Hardware profile:"), profile);
     form->addRow(tr("Motherboard:"), board);
     form->addRow(tr("Key:"), key);
-    form->addRow(tr("Options:"), modemBox);
-    form->addRow(QString(), networkBox);
+    form->addRow(tr("Options:"), modemRow);
+    form->addRow(QString(), networkRow);
     form->addRow(details);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
@@ -137,6 +151,26 @@ MachineManager::MachineManager(QWidget *parent)
             e->userProfile = profile->currentData().toInt();
             board->setEnabled(MT_IS_MAXX(e->userProfile));
             networkBox->setEnabled(MT_IS_MAXX(e->userProfile));
+            networkCfg->setEnabled(MT_IS_MAXX(e->userProfile));
+            showNetworkCard(e->userProfile);
+        }
+    });
+    connect(modemCfg, &QPushButton::clicked, this, [this]() { mt_configure_modem(this); });
+    /* The image's network settings; the box above is kept with the image
+       first, so the dialog starts from it, and follows what the dialog chose
+       ("None" is no card). */
+    connect(networkCfg, &QPushButton::clicked, this, [this]() {
+        Entry *e = current();
+        if (!e)
+            return;
+        const QByteArray path = e->path.toUtf8();
+        megatouch_set_image_option(path.constData(), MT_OPT_NETWORK, e->network > 0);
+        config_save();
+        NetworkSettings dialog(this, e->path, profile->currentData().toInt());
+        if (dialog.exec() == QDialog::Accepted) {
+            config_save();
+            e->network = megatouch_image_option(path.constData(), MT_OPT_NETWORK);
+            networkBox->setChecked(e->network > 0);
         }
     });
     connect(modemBox, &QCheckBox::clicked, this, [this](bool on) {
@@ -320,6 +354,18 @@ MachineManager::fillKeys(const QString &want)
     key->setCurrentIndex((i >= 0) ? i : 0);
 }
 
+/* The card the profile fits, in the network option's text. */
+void
+MachineManager::showNetworkCard(int p)
+{
+    if (p == MT_PROFILE_MAXX_OLD)
+        networkBox->setText(tr("Network card (TRENDnet TE-16XP)"));
+    else if (MT_IS_MAXX(p))
+        networkBox->setText(tr("Network card (Realtek RTL8139)"));
+    else
+        networkBox->setText(tr("Network card (MAXX only)"));
+}
+
 void
 MachineManager::selectionChanged()
 {
@@ -329,9 +375,12 @@ MachineManager::selectionChanged()
     profile->setEnabled(ok);
     key->setEnabled(ok);
     modemBox->setEnabled(ok);
+    modemCfg->setEnabled(ok);
     if (!e) {
         board->setEnabled(false);
         networkBox->setEnabled(false);
+        networkCfg->setEnabled(false);
+        showNetworkCard(-1);
         modemBox->setChecked(false);
         networkBox->setChecked(false);
         details->clear();
@@ -352,6 +401,8 @@ MachineManager::selectionChanged()
     modemBox->setChecked(e->modem > 0);
     networkBox->setChecked(e->network > 0);
     networkBox->setEnabled(ok && MT_IS_MAXX(p));
+    networkCfg->setEnabled(ok && MT_IS_MAXX(p));
+    showNetworkCard(p);
     fillKeys(e->keySet ? e->userKey : mt_default_key(e->id));
 
     QStringList lines;

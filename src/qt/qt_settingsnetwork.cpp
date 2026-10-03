@@ -74,7 +74,9 @@ SettingsNetwork::enableElements(Ui::SettingsNetwork *ui)
 
         bridge_line->setEnabled(net_type_cbox->currentData().toInt() == NET_TYPE_TAP);
         intf_cbox->setEnabled(net_type_cbox->currentData().toInt() == NET_TYPE_PCAP);
-        conf_btn->setEnabled(network_card_has_config(nic_cbox->currentData().toInt()));
+        /* MegaPPBox: the card's own settings (its MAC) are the running
+           cabinet's; another image's are made when it runs. */
+        conf_btn->setEnabled(!offline && network_card_has_config(nic_cbox->currentData().toInt()));
         // net_type_conf_btn->setEnabled(network_type_has_config(netType));
 
         // NEW STUFF
@@ -181,6 +183,7 @@ SettingsNetwork::enableElements(Ui::SettingsNetwork *ui)
 SettingsNetwork::SettingsNetwork(QWidget *parent)
     : QWidget(parent)
     , ui(new Ui::SettingsNetwork)
+    , conf(net_cards_conf)
 {
     ui->setupUi(this);
 
@@ -208,6 +211,18 @@ SettingsNetwork::SettingsNetwork(QWidget *parent)
     }
 }
 
+/* MegaPPBox: the Network dialog on an image that is not running (the Machine
+   Manager's): its settings in confs, its profile's board and card. */
+void
+SettingsNetwork::setOffline(netcard_conf_t *confs, int machineId, const char *card)
+{
+    conf        = confs;
+    offline     = true;
+    offlineCard = card;
+    onCurrentMachineChanged(machineId);
+    enableElements(ui);
+}
+
 SettingsNetwork::~SettingsNetwork()
 {
     for (int i = 0; i < NET_CARD_MAX; i++) {
@@ -231,10 +246,10 @@ SettingsNetwork::changed()
 #if defined(__unix__) || defined(__APPLE__)
         auto *bridge_line = findChild<QLineEdit *>(QString("bridgeTAPNIC%1").arg(i + 1));
 #endif
-        has_changed                 |= (net_cards_conf[i].device_num != cbox->currentData().toInt());
+        has_changed                 |= (conf[i].device_num != cbox->currentData().toInt());
         has_changed                 |= net_card_cfg_changed[i];
         cbox                         = findChild<QComboBox *>(QString("comboBoxNet%1").arg(i + 1));
-        has_changed                 |= (net_cards_conf[i].net_type != cbox->currentData().toInt());
+        has_changed                 |= (conf[i].net_type != cbox->currentData().toInt());
         cbox                         = findChild<QComboBox *>(QString("comboBoxIntf%1").arg(i + 1));
         auto *hostname_value         = findChild<QLineEdit *>(QString("hostnameSwitch%1").arg(i + 1));
         auto *promisc_value          = findChild<QCheckBox *>(QString("boxPromisc%1").arg(i + 1));
@@ -243,34 +258,34 @@ SettingsNetwork::changed()
         char  temp_secret[256];
         char  temp_nrs_hostname[128];
         memset(temp_host_dev_name, '\0', sizeof(temp_host_dev_name));
-        memcpy(temp_secret, net_cards_conf[i].secret, 256);
-        memcpy(temp_nrs_hostname, net_cards_conf[i].nrs_hostname, 128);
-        if (net_cards_conf[i].net_type == NET_TYPE_PCAP)
+        memcpy(temp_secret, conf[i].secret, 256);
+        memcpy(temp_nrs_hostname, conf[i].nrs_hostname, 128);
+        if (conf[i].net_type == NET_TYPE_PCAP)
             strncpy(temp_host_dev_name, network_devs[cbox->currentData().toInt()].device, sizeof(temp_host_dev_name) - 1);
 #ifdef HAS_VDE
-        else if (net_cards_conf[i].net_type == NET_TYPE_VDE)
+        else if (conf[i].net_type == NET_TYPE_VDE)
             strncpy(temp_host_dev_name, socket_line->text().toUtf8().constData(), sizeof(temp_host_dev_name) - 1);
 #endif
 #if defined(__unix__) || defined(__APPLE__)
-        else if (net_cards_conf[i].net_type == NET_TYPE_TAP)
+        else if (conf[i].net_type == NET_TYPE_TAP)
             strncpy(temp_host_dev_name, bridge_line->text().toUtf8().constData(), sizeof(temp_host_dev_name) - 1);
 #endif
-        else if (net_cards_conf[i].net_type == NET_TYPE_NRSWITCH) {
+        else if (conf[i].net_type == NET_TYPE_NRSWITCH) {
             memset(temp_nrs_hostname, '\0', sizeof(temp_nrs_hostname));
             strncpy(temp_nrs_hostname, hostname_value->text().toUtf8().constData(), sizeof(temp_nrs_hostname) - 1);
             memset(temp_secret, '\0', sizeof(temp_secret));
             strncpy(temp_secret, secret_value->text().toUtf8().constData(), sizeof(temp_secret) - 1);
-        } else if (net_cards_conf[i].net_type == NET_TYPE_NLSWITCH) {
-            has_changed |= (net_cards_conf[i].promisc_mode != promisc_value->isChecked());
+        } else if (conf[i].net_type == NET_TYPE_NLSWITCH) {
+            has_changed |= (conf[i].promisc_mode != promisc_value->isChecked());
             memset(temp_secret, '\0', sizeof(temp_secret));
             strncpy(temp_secret, secret_value->text().toUtf8().constData(), sizeof(temp_secret) - 1);
         }
         if (temp_host_dev_name[0] == 0x00)
             strncpy(temp_host_dev_name, "none", 5);
         temp_host_dev_name[sizeof(temp_host_dev_name) - 1] = 0x00;
-        has_changed |= strcmp(temp_host_dev_name, net_cards_conf[i].host_dev_name[0] ? net_cards_conf[i].host_dev_name : "none");
-        has_changed |= strcmp(temp_secret,        net_cards_conf[i].secret);
-        has_changed |= strcmp(temp_nrs_hostname,  net_cards_conf[i].nrs_hostname);
+        has_changed |= strcmp(temp_host_dev_name, conf[i].host_dev_name[0] ? conf[i].host_dev_name : "none");
+        has_changed |= strcmp(temp_secret,        conf[i].secret);
+        has_changed |= strcmp(temp_nrs_hostname,  conf[i].nrs_hostname);
     }
 
     return has_changed ? (SETTINGS_CHANGED | SETTINGS_REQUIRE_HARD_RESET) : 0;
@@ -295,39 +310,39 @@ SettingsNetwork::save(int soft)
 #if defined(__unix__) || defined(__APPLE__)
         auto *bridge_line = findChild<QLineEdit *>(QString("bridgeTAPNIC%1").arg(i + 1));
 #endif
-        net_cards_conf[i].device_num = cbox->currentData().toInt();
+        conf[i].device_num = cbox->currentData().toInt();
         cbox                         = findChild<QComboBox *>(QString("comboBoxNet%1").arg(i + 1));
-        net_cards_conf[i].net_type   = cbox->currentData().toInt();
+        conf[i].net_type   = cbox->currentData().toInt();
         cbox                         = findChild<QComboBox *>(QString("comboBoxIntf%1").arg(i + 1));
         auto *hostname_value         = findChild<QLineEdit *>(QString("hostnameSwitch%1").arg(i + 1));
         auto *promisc_value          = findChild<QCheckBox *>(QString("boxPromisc%1").arg(i + 1));
         auto *secret_value           = findChild<QLineEdit *>(QString("secretSwitch%1").arg(i + 1));
-        memset(net_cards_conf[i].host_dev_name, '\0', sizeof(net_cards_conf[i].host_dev_name));
-        if (net_cards_conf[i].net_type == NET_TYPE_PCAP)
-            strncpy(net_cards_conf[i].host_dev_name, network_devs[cbox->currentData().toInt()].device, sizeof(net_cards_conf[i].host_dev_name) - 1);
+        memset(conf[i].host_dev_name, '\0', sizeof(conf[i].host_dev_name));
+        if (conf[i].net_type == NET_TYPE_PCAP)
+            strncpy(conf[i].host_dev_name, network_devs[cbox->currentData().toInt()].device, sizeof(conf[i].host_dev_name) - 1);
 #ifdef HAS_VDE
-        else if (net_cards_conf[i].net_type == NET_TYPE_VDE)
-            strncpy(net_cards_conf[i].host_dev_name, socket_line->text().toUtf8().constData(), sizeof(net_cards_conf[i].host_dev_name) - 1);
+        else if (conf[i].net_type == NET_TYPE_VDE)
+            strncpy(conf[i].host_dev_name, socket_line->text().toUtf8().constData(), sizeof(conf[i].host_dev_name) - 1);
 #endif
 #if defined(__unix__) || defined(__APPLE__)
-        else if (net_cards_conf[i].net_type == NET_TYPE_TAP)
-            strncpy(net_cards_conf[i].host_dev_name, bridge_line->text().toUtf8().constData(), sizeof(net_cards_conf[i].host_dev_name) - 1);
+        else if (conf[i].net_type == NET_TYPE_TAP)
+            strncpy(conf[i].host_dev_name, bridge_line->text().toUtf8().constData(), sizeof(conf[i].host_dev_name) - 1);
 #endif
-        else if (net_cards_conf[i].net_type == NET_TYPE_NRSWITCH) {
-            memset(net_cards_conf[i].nrs_hostname, '\0', sizeof(net_cards_conf[i].nrs_hostname));
-            strncpy(net_cards_conf[i].nrs_hostname, hostname_value->text().toUtf8().constData(), sizeof(net_cards_conf[i].nrs_hostname) - 1);
-            memset(net_cards_conf[i].secret, '\0', sizeof(net_cards_conf[i].secret));
-            strncpy(net_cards_conf[i].secret, secret_value->text().toUtf8().constData(), sizeof(net_cards_conf[i].secret) - 1);
-        } else if (net_cards_conf[i].net_type == NET_TYPE_NLSWITCH) {
-            net_cards_conf[i].promisc_mode = promisc_value->isChecked();
-            memset(net_cards_conf[i].secret, '\0', sizeof(net_cards_conf[i].secret));
-            strncpy(net_cards_conf[i].secret, secret_value->text().toUtf8().constData(), sizeof(net_cards_conf[i].secret) - 1);
+        else if (conf[i].net_type == NET_TYPE_NRSWITCH) {
+            memset(conf[i].nrs_hostname, '\0', sizeof(conf[i].nrs_hostname));
+            strncpy(conf[i].nrs_hostname, hostname_value->text().toUtf8().constData(), sizeof(conf[i].nrs_hostname) - 1);
+            memset(conf[i].secret, '\0', sizeof(conf[i].secret));
+            strncpy(conf[i].secret, secret_value->text().toUtf8().constData(), sizeof(conf[i].secret) - 1);
+        } else if (conf[i].net_type == NET_TYPE_NLSWITCH) {
+            conf[i].promisc_mode = promisc_value->isChecked();
+            memset(conf[i].secret, '\0', sizeof(conf[i].secret));
+            strncpy(conf[i].secret, secret_value->text().toUtf8().constData(), sizeof(conf[i].secret) - 1);
         }
 
-        if (net_cards_conf[i].host_dev_name[0] == 0x00)
-            strncpy(net_cards_conf[i].host_dev_name, "none", 5);
+        if (conf[i].host_dev_name[0] == 0x00)
+            strncpy(conf[i].host_dev_name, "none", 5);
 
-        net_cards_conf[i].host_dev_name[sizeof(net_cards_conf[i].host_dev_name) - 1] = 0x00;
+        conf[i].host_dev_name[sizeof(conf[i].host_dev_name) - 1] = 0x00;
     }
 }
 
@@ -345,17 +360,17 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
     int                 removeRows_[NET_CARD_MAX]  = { 0 };
     int                 selectedRows[NET_CARD_MAX] = { 0 };
     int                 m_has_net                  = machine_has_flags(machineId, MACHINE_NIC);
-    const char         *mt_card                    = megatouch_network_card();
+    const char         *mt_card                    = offline ? offlineCard : megatouch_network_card();
     netcard_conf_t      shown[NET_CARD_MAX];
 
     /* MegaPPBox: with the image's network option off there is no card, but
        the dialog still shows what it would be plugged into (the image's saved
        settings), so turning it on is picking the card. */
     for (uint8_t i = 0; i < NET_CARD_MAX; ++i) {
-        shown[i] = net_cards_conf[i];
+        shown[i] = conf[i];
         if (!shown[i].device_num) {
             netcard_conf_t saved;
-            if (megatouch_network_saved(i, &saved)) {
+            if (!offline && megatouch_network_saved(i, &saved)) {
                 saved.device_num = 0;
                 shown[i]         = saved;
             }
@@ -390,7 +405,7 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
                         int row = Models::AddEntry(models[i], name, c);
                         sc[i]->addDevice(network_card_getdevice(c), name);
 
-                        if (c == net_cards_conf[i].device_num)
+                        if (c == conf[i].device_num)
                             selectedRows[i] = row - removeRows_[i];
                     }
                 }

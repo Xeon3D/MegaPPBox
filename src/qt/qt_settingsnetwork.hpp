@@ -5,6 +5,8 @@
 
 #include "qt_settings_completer.hpp"
 
+struct netcard_conf_t;
+
 namespace Ui {
 class SettingsNetwork;
 }
@@ -20,6 +22,7 @@ public:
 
     void restore();
     void save(int soft);
+    void setOffline(struct netcard_conf_t *confs, int machineId, const char *card);
 
 public slots:
     void onCurrentMachineChanged(int machineId);
@@ -36,6 +39,9 @@ private slots:
 private:
     Ui::SettingsNetwork *ui;
     int                  machineId = 0;
+    struct netcard_conf_t *conf;   /* what the page shows and saves: net_cards_conf, or setOffline()'s */
+    bool                 offline   = false;
+    const char          *offlineCard = nullptr;
 
     int                  net_card_cfg_changed[4] = { 0, 0, 0, 0 };
 

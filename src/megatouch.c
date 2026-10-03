@@ -563,6 +563,8 @@ mt_apply_video_sound(const mt_profile_t *p)
     mpu401_standalone_enable   = 0;
 }
 
+static int mt_com2_hidden; /* MAXX without the modem: no COM2 */
+
 /* The touchscreen is the only thing a player ever touches: a MicroTouch
    controller on COM1, which every release probes. */
 static void
@@ -583,10 +585,13 @@ mt_apply_input(void)
     /* COM1 is the touch screen.  COM2 is the modem when the image has one
        fitted.  Otherwise MAXX has nothing there: the Linux releases' modem
        probe (on /dev/modem = ttyS1) waits forever on a port that is there but
-       silent; absent, it gives up. */
+       silent; absent, it gives up.  The UART is still built, and hidden once
+       the machine is (megatouch_machine_built()), so that plugging the modem
+       in later can bring it back. */
     const int modem = megatouch_image_option(mt_image, MT_OPT_MODEM);
+    mt_com2_hidden  = MT_IS_MAXX(mt_profile) && !modem;
     for (int i = 0; i < SERIAL_MAX; i++) {
-        com_ports[i].enabled = (i < ((MT_IS_MAXX(mt_profile) && !modem) ? 1 : 2));
+        com_ports[i].enabled = (i < 2);
         com_ports[i].device  = 0;
     }
     if (modem) {
@@ -594,6 +599,59 @@ mt_apply_input(void)
         if (!com_ports[1].device)
             fatal("MegaPPBox: the modem is missing from this build\n");
     }
+}
+
+/* After the machine is built, before it runs: on MAXX without the modem, COM2
+   goes, and stays gone whatever the board's I/O chip is told. */
+void
+megatouch_machine_built(void)
+{
+    serial_t *uart = com_ports[1].serial;
+
+    if (mt_com2_hidden && uart) {
+        serial_remove(uart);
+        com_ports[1].enabled = 0;
+    }
+}
+
+/* The modem in or out with the machine running (the emulation held by the
+   caller): 86Box's hot-plug of a COM device; on MAXX COM2 comes and goes with
+   it.  The guest sees the port at once; a release that looked for a modem
+   at boot only sees the change at its next one. */
+int
+megatouch_modem_plugged(void)
+{
+    return com_ports[1].enabled && com_ports[1].serial && com_ports[1].device;
+}
+
+void
+megatouch_modem_plug(int on)
+{
+    serial_t *uart = com_ports[1].serial;
+
+    if (!uart)
+        return;
+    if (on) {
+        if (!com_ports[1].enabled) {
+            com_ports[1].enabled = 1;
+            serial_setup(uart, COM2_ADDR, COM2_IRQ);
+        }
+        com_ports[1].device = char_get_from_internal_name("modem_fm560lk", DEVICE_COM);
+    } else
+        com_ports[1].device = 0;
+    serial_devices_reset();
+    if (!on) {
+        /* The cable is out: no carrier, no modem. */
+        serial_set_dcd(uart, 0);
+        serial_set_dsr(uart, 0);
+        serial_set_cts(uart, 0);
+        serial_set_ri(uart, 0);
+        if (MT_IS_MAXX(mt_profile)) {
+            serial_remove(uart);
+            com_ports[1].enabled = 0;
+        }
+    }
+    mt_com2_hidden = !on && MT_IS_MAXX(mt_profile);
 }
 
 /* The network cards, when the image has one fitted.  By default the first is
@@ -646,20 +704,26 @@ mt_net_dev_section(char *sec, size_t len, int k)
    releases (MAXX (Old)), the RTL8139 for the Linux ones (MAXX (New)); NULL
    when the profile has none. */
 const char *
+megatouch_network_card_for(int profile)
+{
+    if (!MT_IS_MAXX(profile))
+        return NULL;
+    return (profile == MT_PROFILE_MAXX_OLD) ? "te16xp" : "rtl8139c+";
+}
+
+const char *
 megatouch_network_card(void)
 {
-    if (!MT_IS_MAXX(mt_profile))
-        return NULL;
-    return (mt_profile == MT_PROFILE_MAXX_OLD) ? "te16xp" : "rtl8139c+";
+    return megatouch_network_card_for(mt_profile);
 }
 
 /* Card slot k of the image's saved network settings into nc (card, what it is
    plugged into); 0 when the slot has no card. */
 static int
-mt_read_net_slot(const char *sec, int k, netcard_conf_t *nc)
+mt_read_net_slot(const char *sec, int profile, int k, netcard_conf_t *nc)
 {
     char        key[32];
-    const char *card = megatouch_network_card();
+    const char *card = megatouch_network_card_for(profile);
     const char *s;
 
     memset(nc, 0, sizeof(*nc));
@@ -705,7 +769,24 @@ megatouch_network_saved(int k, netcard_conf_t *nc)
     memset(nc, 0, sizeof(*nc));
     if (!MT_IS_MAXX(mt_profile) || !mt_image_section(mt_image, 0, sec, sizeof(sec)))
         return 0;
-    return mt_read_net_slot(sec, k, nc);
+    return mt_read_net_slot(sec, mt_profile, k, nc);
+}
+
+/* The Network dialog on an image that is not running (the Machine Manager's):
+   what its cards are plugged into, as profile would fit them; a card only
+   when the image's network option is on. */
+void
+megatouch_network_load(const char *image, int profile, netcard_conf_t *confs)
+{
+    char      sec[64];
+    const int on = megatouch_image_option(image, MT_OPT_NETWORK);
+
+    memset(confs, 0, NET_CARD_MAX * sizeof(netcard_conf_t));
+    if (!MT_IS_MAXX(profile) || !mt_image_section(image, 0, sec, sizeof(sec)))
+        return;
+    for (int k = 0; k < NET_CARD_MAX; k++)
+        if (mt_read_net_slot(sec, profile, k, &confs[k]) && !on)
+            confs[k].device_num = 0;
 }
 
 static void
@@ -725,7 +806,7 @@ mt_apply_network(void)
         netcard_conf_t *nc = &net_cards_conf[k];
         int             mac;
 
-        if (!mt_read_net_slot(sec, k, nc))
+        if (!mt_read_net_slot(sec, mt_profile, k, nc))
             continue;
 
         /* The card's MAC is the image's, not the folder's. */
@@ -743,30 +824,32 @@ mt_apply_network(void)
     }
 }
 
-/* After the Network dialog: keep what it set with the image. */
-void
-megatouch_network_to_image(void)
+/* After the Network dialog: keep what it set (confs) with the image.  The
+   card's MAC is taken from the card's settings only for the running image:
+   another image's is made the first time it runs. */
+static void
+mt_network_store(const char *image, int profile, const netcard_conf_t *confs, int running)
 {
     char sec[64];
     char key[32];
     char devsec[128];
     int  any = 0;
 
-    if (!MT_IS_MAXX(mt_profile))
+    if (!MT_IS_MAXX(profile))
         return;
     for (int k = 0; k < NET_CARD_MAX; k++)
-        any |= (net_cards_conf[k].device_num > 0);
+        any |= (confs[k].device_num > 0);
     /* No card at all is the network option off; what the cards were stays
        for when it is back on. */
     if (!any) {
-        megatouch_set_image_option(mt_image, MT_OPT_NETWORK, 0);
+        megatouch_set_image_option(image, MT_OPT_NETWORK, 0);
         return;
     }
-    if (!mt_image_section(mt_image, 1, sec, sizeof(sec)))
+    if (!mt_image_section(image, 1, sec, sizeof(sec)))
         return;
 
     for (int k = 0; k < NET_CARD_MAX; k++) {
-        const netcard_conf_t *nc = &net_cards_conf[k];
+        const netcard_conf_t *nc = &confs[k];
         const int             on = (nc->device_num > 0);
         int                   mac;
 
@@ -786,6 +869,8 @@ megatouch_network_to_image(void)
         config_set_int(sec, key, nc->promisc_mode);
 
         /* A MAC set with Configure... goes with the image too. */
+        if (!running)
+            continue;
         mt_net_dev_section(devsec, sizeof(devsec), k);
         mac = config_get_mac(devsec, "mac", -1);
         if (!(mac & 0xff000000)) {
@@ -794,6 +879,18 @@ megatouch_network_to_image(void)
         }
     }
     config_set_int(sec, MT_OPT_NETWORK, 1);
+}
+
+void
+megatouch_network_to_image(void)
+{
+    mt_network_store(mt_image, mt_profile, net_cards_conf, 1);
+}
+
+void
+megatouch_network_store(const char *image, int profile, const netcard_conf_t *confs)
+{
+    mt_network_store(image, profile, confs, 0);
 }
 
 /* Which cabinet board Emerald's C:\MTOOLS\CMOS\WBOARD.EXE sees.  It looks for

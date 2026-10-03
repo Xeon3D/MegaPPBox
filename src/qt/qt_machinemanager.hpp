@@ -67,6 +67,7 @@ private:
     void    fillKeys(const QString &want);
     QString keysDir() const;
     Entry  *current();
+    void    showNetworkCard(int profile);
 
     QLineEdit   *folder;
     QTreeWidget *tree;
@@ -76,6 +77,8 @@ private:
     QComboBox   *key;
     QCheckBox   *modemBox;
     QCheckBox   *networkBox;
+    QPushButton *modemCfg;
+    QPushButton *networkCfg;
     QLabel      *details;
     QLabel      *status;
     QPushButton *run;

@@ -97,8 +97,19 @@ extern void megatouch_set_image_option(const char *image, const char *name, int 
 /* Keep the Network dialog's settings (net_cards_conf[]) with the image. */
 extern void megatouch_network_to_image(void);
 extern const char *megatouch_network_card(void);
+extern const char *megatouch_network_card_for(int profile);
 struct netcard_conf_t;
 extern int megatouch_network_saved(int k, struct netcard_conf_t *nc);
+/* ...and for an image that is not running (the Machine Manager): its saved
+   settings into confs[NET_CARD_MAX], and back. */
+extern void megatouch_network_load(const char *image, int profile, struct netcard_conf_t *confs);
+extern void megatouch_network_store(const char *image, int profile, const struct netcard_conf_t *confs);
+
+/* The modem on COM2, in or out while the machine runs (hold the emulation:
+   startblit()); after a hard reset the image's option says again. */
+extern void megatouch_machine_built(void);
+extern int  megatouch_modem_plugged(void);
+extern void megatouch_modem_plug(int on);
 
 /* The Merit I/O board calls this on every access: with the TE-16 fitted on
    MAXX (Old), the BIOS segment carries the Mitsubishi board's "Apricot"

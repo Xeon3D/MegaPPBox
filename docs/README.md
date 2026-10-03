@@ -29,10 +29,12 @@ profile it will use. Before pressing **Run** you can change:
 - **Motherboard** (MAXX only): the ASUS TX97, or a spare i430VX board.
 - **Key**: the security key fitted to the Merit I/O board.
 - **Modem on COM2**: a 56K modem on COM2 (0x2F8, IRQ 3), as the MAXX
-  TournaMAXX/MegaNET kits fitted one. Off by default. *Tools > Modem
-  settings...* can make it dial a TCP host instead of a line, e.g. a
-  [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival) server
-  for the DOS releases' tournaments and updates.
+  TournaMAXX/MegaNET kits fitted one. On by default for the releases with an
+  on-line client (MAXX Diamond on), off for the others. *Modem settings...*
+  (beside it, or in *Tools*) can make it dial a TCP host instead of a line,
+  e.g. a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
+  server for the DOS releases' tournaments and updates; these settings are
+  the same for every image.
 - **Network card** (MAXX only), behind NAT. Off by default.
   - On MAXX (Old): an ISA TRENDnet TE-16XP, jumperless at 0x340, IRQ 11. Every
     DOS release from MAXX 2K on loads its drivers from `C:\ETHERNET` (`LSL`,
@@ -43,8 +45,14 @@ profile it will use. Before pressing **Run** you can change:
     that board's identity too.
   - On MAXX (New): an RTL8139, which the Linux releases (Ruby onward) can use.
 
-Both options are kept with each image, in `MegaPPBox.cfg`, and take effect
-when the image starts.
+Both options are kept with each image, in `MegaPPBox.cfg`. The network card
+takes effect when the image starts. The modem goes in or out at once
+(*Tools > Modem on COM2*), with no reset: a release that already looked for
+it at boot only sees the change after a restart, which MegaPPBox offers but
+does not make. A new telephone line or host (*Tools > Modem settings...*)
+is taken at once too; a call in progress keeps its host, and drops if the
+line is now not connected. *Network settings...* beside the option sets the
+selected image's card (see below), running or not.
 
 ### Network settings and Mega-Link
 

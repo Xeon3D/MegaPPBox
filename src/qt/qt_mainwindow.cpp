@@ -365,8 +365,9 @@ MainWindow::MainWindow(QWidget *parent)
         ui->menuTools->insertMenu(cabinetEnd, keyMenu);
         ui->menuTools->insertSeparator(cabinetEnd);
 
-        /* The image's own options (megatouch_image_option): new hardware, so a
-           change is kept with the image and built on a hard reset. */
+        /* The image's own options (megatouch_image_option), kept with the
+           image.  The modem goes in and out at once; the network card is built
+           at the next hard reset. */
         auto *modemAct = new QAction(tr("&Modem on COM2"), this);
         auto *netAct   = new QAction(tr("&Network card"), this);
         modemAct->setCheckable(true);
@@ -398,23 +399,11 @@ MainWindow::MainWindow(QWidget *parent)
                 pc_reset_hard();
             }
         };
-        connect(modemAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_MODEM, on); });
+        connect(modemAct, &QAction::triggered, this, [this](bool on) { mt_plug_modem(this, on); });
         /* The line behind the modem: dead, or a TCP host (name or address) and
            port that a dial connects to.  Same settings for every image; the
            device is on COM2, so it is instance 2. */
-        connect(modemCfg, &QAction::triggered, this, [this]() {
-            if (!DeviceConfig::ConfigureDevice(&char_modem_megatouch_com_device, 2, this))
-                return;
-            config_save();
-            const char *img = megatouch_image();
-            if (img && img[0] && megatouch_image_option(img, MT_OPT_MODEM) &&
-                (QMessageBox::question(this, EMU_NAME,
-                                       tr("The change takes effect at the next hard reset. Reset now?"))
-                 == QMessageBox::Yes)) {
-                config_changed = 2;
-                pc_reset_hard();
-            }
-        });
+        connect(modemCfg, &QAction::triggered, this, [this]() { mt_configure_modem(this); });
         connect(netAct, &QAction::triggered, this, [setOption](bool on) { setOption(MT_OPT_NETWORK, on); });
         /* The cards and what they plug into (PeepeeBox's dialog): NAT, a host
            network card, or a switch shared with other cabinets -- Mega-Link. */

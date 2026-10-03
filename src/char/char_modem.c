@@ -1025,19 +1025,12 @@ modem_close(void *priv)
     free(dev);
 }
 
-static void *
-modem_init(const device_t *info)
+/* The settings, from the device's context (init(), or the one
+   modem_megatouch_reconfigure() sets up). */
+static void
+modem_read_config(modem_t *dev)
 {
-    modem_t    *dev = (modem_t *) calloc(1, sizeof(modem_t));
     const char *s;
-
-    dev->model = &modem_models[(info->local < (int) (sizeof(modem_models) / sizeof(modem_models[0])))
-                                   ? info->local
-                                   : MODEM_MODEL_FM560LK];
-    dev->sock  = (SOCKET) -1;
-    dev->snd   = modem_sound_init();
-    (void) megatouch_modem_sounds();   /* read the setting here, not first on the sound thread */
-    modem_load_defaults(dev);
 
     dev->line         = device_get_config_int("line");
     dev->host_port    = device_get_config_int("host_port");
@@ -1061,6 +1054,43 @@ modem_init(const device_t *info)
        otherwise every dial would stall on a connect to port 0. */
     if ((dev->line == MODEM_LINE_TCP) && (dev->host[0] == '\0'))
         dev->line = MODEM_LINE_DEAD;
+}
+
+/* The Modem settings dialog, with the machine running (the emulation held by
+   the caller): the fitted modem takes the new line, host and speed at once.
+   A call in progress carries on with the host it reached; with the line now
+   not connected, it drops, as with a pulled phone cord. */
+void
+modem_megatouch_reconfigure(void)
+{
+    modem_t *dev = (modem_t *) device_get_priv(&char_modem_megatouch_com_device);
+
+    if (dev == NULL)
+        return;
+    device_context_inst(&char_modem_megatouch_com_device, 2);
+    modem_read_config(dev);
+    device_context_restore();
+
+    char_modem_log(dev->log, "settings: line %s\n", (dev->line == MODEM_LINE_TCP) ? dev->host : "dead");
+    if ((dev->line == MODEM_LINE_DEAD) && (dev->state != MODEM_ST_IDLE)) {
+        modem_hangup(dev);
+        modem_result(dev, RES_NO_CARRIER);
+    }
+}
+
+static void *
+modem_init(const device_t *info)
+{
+    modem_t *dev = (modem_t *) calloc(1, sizeof(modem_t));
+
+    dev->model = &modem_models[(info->local < (int) (sizeof(modem_models) / sizeof(modem_models[0])))
+                                   ? info->local
+                                   : MODEM_MODEL_FM560LK];
+    dev->sock  = (SOCKET) -1;
+    dev->snd   = modem_sound_init();
+    (void) megatouch_modem_sounds();   /* read the setting here, not first on the sound thread */
+    modem_load_defaults(dev);
+    modem_read_config(dev);
 
     dev->port = char_attach(0, modem_read, modem_write, modem_status,
                             modem_control, modem_port_config, dev);
@@ -1150,7 +1180,7 @@ static const device_config_t modem_config[] = {
 const device_t char_modem_megatouch_com_device = {
     .name          = "ActionTec 56K PC Card (FM560LK)",
     .internal_name = "modem_fm560lk",
-    .flags         = DEVICE_COM,
+    .flags         = DEVICE_COM | DEVICE_HOTPLUG, /* in and out with the machine running */
     .local         = MODEM_MODEL_FM560LK,
     .init          = modem_init,
     .close         = modem_close,
