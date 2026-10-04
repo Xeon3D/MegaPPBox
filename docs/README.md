@@ -36,8 +36,13 @@ profile it will use. Before pressing **Run** you can change:
   e.g. a [TournaMAXX-Revival](https://github.com/Xeon3D/TournaMAXX-Revival)
   server for the DOS releases' tournaments and updates; these settings are
   the same for every image.
-- **Network card** (MAXX only), behind NAT. Off by default.
-  - On MAXX (Old): an ISA TRENDnet TE-16XP, jumperless at 0x340, IRQ 11. Every
+- **Network card**, for Mega-Link (and NAT on MAXX). Off by default.
+  - On XL, and for MAXX 1st: **Mega-Link (RS-485 on COM2)**. Before the
+    Ethernet cards, Merit linked cabinets on an RS-485 bus through the PC's
+    second serial port (115200 baud, 12-byte packets, time slots on one
+    shared line). MegaPPBox carries that bus between cabinets over the
+    Local or Remote Switch. MAXX 1st has no Ethernet software at all.
+  - On MAXX (Old), from MAXX 2K on: an ISA TRENDnet TE-16XP, jumperless at 0x340, IRQ 11. Every
     DOS release from MAXX 2K on loads its drivers from `C:\ETHERNET` (`LSL`,
     `ODI.COM`, `NPTSR`). (From 2K Plus on they also knew the newer TE-16PT;
     2K did not, so the one card that works for all is fitted.) Double Diamond
@@ -80,7 +85,9 @@ cable or a hub on the real thing — is the switch:
    linked games must run the same software version.
 
 Tested on a local switch with every DOS release from MAXX 2K and every Linux
-release (up to six cabinets).
+release (up to six cabinets), and over RS-485 with MAXX 1st and XL Platinum
+pairs. The XL releases and MAXX 1st use the same steps: their card is
+*Mega-Link RS-485 (COM2)*, which only means anything on a switch.
 
 *Show images that cannot run here* also lists restore discs and unrecognised
 files, with the reason each one is not offered.
