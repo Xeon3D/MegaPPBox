@@ -348,13 +348,12 @@ MachineManager::MachineManager(QWidget *parent)
     keyRow->addWidget(keysBtn);
     modemBox   = new QCheckBox(tr("Modem on COM2 (ActionTec 56K)"));
     networkBox = new QCheckBox;
-    showNetworkCard(-1);
     /* What they plug into: the modem's telephone line (every image), the
        card's network -- NAT, or Mega-Link (this image). */
     modemCfg   = new QPushButton(tr("Modem settings..."));
     networkCfg = new QPushButton(tr("Network settings..."));
     modemCfg->setEnabled(false);
-    networkCfg->setEnabled(false);
+    showNetworkCard(-1);
     auto *modemRow = new QHBoxLayout;
     modemRow->addWidget(modemBox, 1);
     modemRow->addWidget(modemCfg);
@@ -420,8 +419,6 @@ MachineManager::MachineManager(QWidget *parent)
         if (Entry *e = current()) {
             e->userProfile = profile->currentData().toInt();
             board->setEnabled(MT_IS_MAXX(e->userProfile));
-            networkBox->setEnabled(MT_IS_MAXX(e->userProfile));
-            networkCfg->setEnabled(MT_IS_MAXX(e->userProfile));
             showNetworkCard(e->userProfile);
         }
     });
@@ -435,6 +432,8 @@ MachineManager::MachineManager(QWidget *parent)
             return;
         const QByteArray path = e->path.toUtf8();
         megatouch_set_image_option(path.constData(), MT_OPT_NETWORK, e->network > 0);
+        if (e->id.link485)
+            megatouch_network_default_card(path.constData(), "link485");
         config_save();
         NetworkSettings dialog(this, e->path, profile->currentData().toInt());
         if (dialog.exec() == QDialog::Accepted) {
@@ -624,16 +623,23 @@ MachineManager::fillKeys(const QString &want)
     key->setCurrentIndex((i >= 0) ? i : 0);
 }
 
-/* The card the profile fits, in the network option's text. */
+/* The card the release and profile take, in the network option's text: the
+   XL releases and MAXX 1st link over RS-485 on COM2, the later MAXX
+   releases over Ethernet. */
 void
 MachineManager::showNetworkCard(int p)
 {
-    if (p == MT_PROFILE_MAXX_OLD)
+    const Entry *e    = current();
+    const bool   r485 = !MT_IS_MAXX(p) || (e && e->id.link485 && (p == MT_PROFILE_MAXX_OLD));
+
+    if (r485)
+        networkBox->setText(tr("Mega-Link (RS-485 on COM2)"));
+    else if (p == MT_PROFILE_MAXX_OLD)
         networkBox->setText(tr("Network card (TRENDnet TE-16XP)"));
-    else if (MT_IS_MAXX(p))
-        networkBox->setText(tr("Network card (Realtek RTL8139)"));
     else
-        networkBox->setText(tr("Network card (MAXX only)"));
+        networkBox->setText(tr("Network card (Realtek RTL8139)"));
+    networkBox->setEnabled(e && e->id.runnable());
+    networkCfg->setEnabled(e && e->id.runnable());
 }
 
 void
@@ -670,8 +676,6 @@ MachineManager::selectionChanged()
         e->network = megatouch_image_option(e->path.toUtf8().constData(), MT_OPT_NETWORK);
     modemBox->setChecked(e->modem > 0);
     networkBox->setChecked(e->network > 0);
-    networkBox->setEnabled(ok && MT_IS_MAXX(p));
-    networkCfg->setEnabled(ok && MT_IS_MAXX(p));
     showNetworkCard(p);
     fillKeys(e->keySet ? e->userKey : mt_default_key(e->id));
 
@@ -707,6 +711,8 @@ MachineManager::accept()
         const QByteArray path = x.path.toUtf8();
         megatouch_set_image_option(path.constData(), MT_OPT_MODEM, x.modem > 0);
         megatouch_set_image_option(path.constData(), MT_OPT_NETWORK, x.network > 0);
+        if (x.id.link485 && (x.network > 0))
+            megatouch_network_default_card(path.constData(), "link485");
     }
     QDialog::accept();
 }

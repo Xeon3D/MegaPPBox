@@ -382,12 +382,12 @@ MainWindow::MainWindow(QWidget *parent)
         connect(ui->menuTools, &QMenu::aboutToShow, this, [modemAct, netAct, netCfg]() {
             const char *img  = megatouch_image();
             const bool  has  = img && img[0];
-            const bool  maxx = MT_IS_MAXX(megatouch_profile());
+            const bool  card = megatouch_network_card() != nullptr; /* every profile has one */
             modemAct->setEnabled(has);
-            netAct->setEnabled(has && maxx);
-            netCfg->setEnabled(has && maxx);
+            netAct->setEnabled(has && card);
+            netCfg->setEnabled(has && card);
             modemAct->setChecked(has && megatouch_image_option(img, MT_OPT_MODEM));
-            netAct->setChecked(has && maxx && megatouch_image_option(img, MT_OPT_NETWORK));
+            netAct->setChecked(has && card && megatouch_image_option(img, MT_OPT_NETWORK));
         });
         auto setOption = [this](const char *opt, bool on) {
             megatouch_set_image_option(megatouch_image(), opt, on);

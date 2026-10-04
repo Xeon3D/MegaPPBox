@@ -90,7 +90,8 @@ typedef struct net_card_migrate_t {
    MAXX 2K on drives (the later ones also knew the newer TE-16PT; one card
    that works everywhere is enough, and a saved "te16pt" becomes the TE-16XP).
    The TRENDnet TE100-PC16, a PC Card in the I/O board's slot (src/pcmcia),
-   can be fitted on those releases instead: MAXX 1st's CardSoft drives it. */
+   can be fitted on those releases instead: MAXX 1st's CardSoft drives it.
+   And the RS-485 link on COM2, how the XL releases and MAXX 1st linked. */
 static const NETWORK_CARD net_cards[] = {
     // clang-format off
     { &device_none                },
@@ -98,6 +99,7 @@ static const NETWORK_CARD net_cards[] = {
     { &rtl8139c_plus_device       },
     { &te16xp_device              },
     { &te100pc16_device           },
+    { &link485_device             },
     { NULL                        }
     // clang-format on
 };

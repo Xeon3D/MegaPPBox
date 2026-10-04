@@ -261,6 +261,9 @@ extern const device_t te16xp_device;
 /* TRENDnet TE100-PC16 (PC Card, AX88190), in the MAXX I/O board's socket A */
 extern const device_t te100pc16_device;
 
+/* Mega-Link over RS-485 on COM2 (XL, MAXX 1st) */
+extern const device_t link485_device;
+
 /* Intel 8255x */
 extern const device_t i82557_device;
 extern const device_t i82558_device;

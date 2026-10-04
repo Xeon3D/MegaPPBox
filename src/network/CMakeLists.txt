@@ -12,6 +12,7 @@ add_library(net OBJECT
     net_event.c
     net_null.c
     net_rtl8139.c
+    net_link485.c
     net_dp8390.c
     net_ne2000.c
 )

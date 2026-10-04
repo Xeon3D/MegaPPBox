@@ -433,6 +433,9 @@ void setMaxx(MtIdent &id, int major, const QString &version, MtIdent::Kind kind)
     /* Diamond (V6) on dial in: TournaMAXX on the DOS releases (MAXX, 2K and 2K
        Plus have no client), Merit's own client on the Linux ones. */
     id.modem = (major >= 6);
+    /* MAXX 1st (V3) links cabinets over RS-485 on COM2, as XL does; 2K on
+       over Ethernet (the TE-16 cards). */
+    id.link485 = (major <= 3);
 
     if (kind == MtIdent::LinuxDisk)
         id.note = QStringLiteral("Linux releases restart once on first boot or after a hardware change, "

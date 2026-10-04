@@ -854,6 +854,33 @@ mt_apply_video_sound(const mt_profile_t *p)
 
 static int mt_com2_hidden; /* MAXX without the modem: no COM2 */
 
+/* Whether the image's network card is the RS-485 link, which is on COM2. */
+static int
+mt_link485_fitted(void)
+{
+    char        sec[64];
+    const char *card;
+
+    if (!megatouch_image_option(mt_image, MT_OPT_NETWORK) || !mt_image_section(mt_image, 0, sec, sizeof(sec)))
+        return 0;
+    card = config_get_string(sec, "net1_card", (char *) megatouch_network_card_for(mt_profile));
+    return card && !strcmp(card, "link485");
+}
+
+/* The Machine Manager, for a release whose cabinets link over RS-485 on a
+   profile whose own card is another (MAXX 1st on MAXX (Old)): the image's
+   card, unless it has one already. */
+void
+megatouch_network_default_card(const char *image, const char *card)
+{
+    char sec[64];
+
+    if (!mt_image_section(image, 1, sec, sizeof(sec)))
+        return;
+    if (!config_get_string(sec, "net1_card", NULL))
+        config_set_string(sec, "net1_card", (char *) card);
+}
+
 /* The touchscreen is the only thing a player ever touches: a MicroTouch
    controller on COM1, which every release probes. */
 static void
@@ -878,7 +905,7 @@ mt_apply_input(void)
        the machine is (megatouch_machine_built()), so that plugging the modem
        in later can bring it back. */
     const int modem = megatouch_image_option(mt_image, MT_OPT_MODEM);
-    mt_com2_hidden  = MT_IS_MAXX(mt_profile) && !modem;
+    mt_com2_hidden  = MT_IS_MAXX(mt_profile) && !modem && !mt_link485_fitted();
     for (int i = 0; i < SERIAL_MAX; i++) {
         com_ports[i].enabled = (i < 2);
         com_ports[i].device  = 0;
@@ -935,12 +962,12 @@ megatouch_modem_plug(int on)
         serial_set_dsr(uart, 0);
         serial_set_cts(uart, 0);
         serial_set_ri(uart, 0);
-        if (MT_IS_MAXX(mt_profile)) {
+        if (MT_IS_MAXX(mt_profile) && !mt_link485_fitted()) {
             serial_remove(uart);
             com_ports[1].enabled = 0;
         }
     }
-    mt_com2_hidden = !on && MT_IS_MAXX(mt_profile);
+    mt_com2_hidden = !on && MT_IS_MAXX(mt_profile) && !mt_link485_fitted();
 }
 
 /* The network cards, when the image has one fitted.  By default the first is
@@ -989,20 +1016,22 @@ mt_net_dev_section(char *sec, size_t len, int k)
     snprintf(sec, len, "%s #%i", dev ? dev->name : "", k + 1);
 }
 
-/* The one network card a profile's cabinet takes: the TE-16XP for the DOS
-   releases (MAXX (Old)), the RTL8139 for the Linux ones (MAXX (New)); NULL
-   when the profile has none. */
+/* The network card a profile's cabinet takes by default: on XL the RS-485
+   link on COM2 (net_link485.c), on the DOS MAXX releases (MAXX (Old)) the
+   TE-16XP, on the Linux ones (MAXX (New)) the RTL8139. */
 const char *
 megatouch_network_card_for(int profile)
 {
-    if (!MT_IS_MAXX(profile))
+    if ((profile < 0) || (profile >= MT_PROFILE_COUNT))
         return NULL;
+    if (!MT_IS_MAXX(profile))
+        return "link485";
     return (profile == MT_PROFILE_MAXX_OLD) ? "te16xp" : "rtl8139c+";
 }
 
 /* Whether a card fits the profile's cabinet: its own card, and on MAXX (Old)
-   also the TE100-PC16 PC Card (src/pcmcia), which MAXX 1st's CardSoft
-   drives; the later DOS releases look for the TE-16 cards only. */
+   also the RS-485 link (MAXX 1st links that way, as XL does) and the
+   TE100-PC16 PC Card (src/pcmcia), which MAXX 1st's CardSoft drives. */
 int
 megatouch_network_card_fits(int profile, const char *card)
 {
@@ -1011,7 +1040,8 @@ megatouch_network_card_fits(int profile, const char *card)
     if (!card)
         return 0;
     return (own && !strcmp(card, own)) ||
-           ((profile == MT_PROFILE_MAXX_OLD) && !strcmp(card, "te100pc16"));
+           ((profile == MT_PROFILE_MAXX_OLD) &&
+            (!strcmp(card, "te100pc16") || !strcmp(card, "link485")));
 }
 
 const char *
@@ -1048,7 +1078,8 @@ mt_read_net_slot(const char *sec, int profile, int k, netcard_conf_t *nc)
 
     nc->net_type = NET_TYPE_SLIRP;
     mt_net_key(key, sizeof(key), k, "type");
-    s = config_get_string((char *) sec, key, "slirp");
+    /* The RS-485 link only means anything on a switch. */
+    s = config_get_string((char *) sec, key, (char *) (strcmp(card, "link485") ? "slirp" : "lswitch"));
     for (int t = 0; t < (int) (sizeof(mt_net_types) / sizeof(mt_net_types[0])); t++)
         if (mt_net_types[t] && !strcmp(s, mt_net_types[t]))
             nc->net_type = t;
@@ -1073,7 +1104,7 @@ megatouch_network_saved(int k, netcard_conf_t *nc)
     char sec[64];
 
     memset(nc, 0, sizeof(*nc));
-    if (!MT_IS_MAXX(mt_profile) || !mt_image_section(mt_image, 0, sec, sizeof(sec)))
+    if (!megatouch_network_card_for(mt_profile) || !mt_image_section(mt_image, 0, sec, sizeof(sec)))
         return 0;
     return mt_read_net_slot(sec, mt_profile, k, nc);
 }
@@ -1088,7 +1119,7 @@ megatouch_network_load(const char *image, int profile, netcard_conf_t *confs)
     const int on = megatouch_image_option(image, MT_OPT_NETWORK);
 
     memset(confs, 0, NET_CARD_MAX * sizeof(netcard_conf_t));
-    if (!MT_IS_MAXX(profile) || !mt_image_section(image, 0, sec, sizeof(sec)))
+    if (!megatouch_network_card_for(profile) || !mt_image_section(image, 0, sec, sizeof(sec)))
         return;
     for (int k = 0; k < NET_CARD_MAX; k++)
         if (mt_read_net_slot(sec, profile, k, &confs[k]) && !on)
@@ -1104,7 +1135,7 @@ mt_apply_network(void)
 
     memset(net_cards_conf, 0, sizeof(net_cards_conf));
     mt_apricot = 0;
-    if (!MT_IS_MAXX(mt_profile) || !megatouch_image_option(mt_image, MT_OPT_NETWORK) ||
+    if (!megatouch_network_card_for(mt_profile) || !megatouch_image_option(mt_image, MT_OPT_NETWORK) ||
         !mt_image_section(mt_image, 0, sec, sizeof(sec)))
         return;
 
@@ -1141,7 +1172,7 @@ mt_network_store(const char *image, int profile, const netcard_conf_t *confs, in
     char devsec[128];
     int  any = 0;
 
-    if (!MT_IS_MAXX(profile))
+    if (!megatouch_network_card_for(profile))
         return;
     for (int k = 0; k < NET_CARD_MAX; k++)
         any |= (confs[k].device_num > 0);

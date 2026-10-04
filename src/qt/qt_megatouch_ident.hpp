@@ -33,6 +33,8 @@ struct MtIdent {
     bool    modem = false; /* has an on-line client (TournaMAXX on the DOS
                               releases, Merit's own on Linux): the modem
                               option starts on for it                      */
+    bool    link485 = false; /* links over RS-485 on COM2 (MAXX 1st; XL by
+                                its profile) rather than Ethernet           */
 
     bool runnable() const { return (kind == DosDisk) || (kind == LinuxDisk) || (kind == XlCd); }
 };
