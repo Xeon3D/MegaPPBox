@@ -1000,6 +1000,20 @@ megatouch_network_card_for(int profile)
     return (profile == MT_PROFILE_MAXX_OLD) ? "te16xp" : "rtl8139c+";
 }
 
+/* Whether a card fits the profile's cabinet: its own card, and on MAXX (Old)
+   also the TE100-PC16 PC Card (src/pcmcia), which MAXX 1st's CardSoft
+   drives; the later DOS releases look for the TE-16 cards only. */
+int
+megatouch_network_card_fits(int profile, const char *card)
+{
+    const char *own = megatouch_network_card_for(profile);
+
+    if (!card)
+        return 0;
+    return (own && !strcmp(card, own)) ||
+           ((profile == MT_PROFILE_MAXX_OLD) && !strcmp(card, "te100pc16"));
+}
+
 const char *
 megatouch_network_card(void)
 {
@@ -1023,6 +1037,9 @@ mt_read_net_slot(const char *sec, int profile, int k, netcard_conf_t *nc)
         card = "te16xp";
     if (!strcmp(card, "none"))
         return 0;
+    /* A card saved under another profile gives way to this one's own. */
+    if (!megatouch_network_card_fits(profile, card))
+        card = megatouch_network_card_for(profile);
     nc->device_num = network_card_get_from_internal_name((char *) card);
     if (!nc->device_num) {
         pclog("MegaPPBox: network card %s is not in this build\n", card);

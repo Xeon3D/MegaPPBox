@@ -57,8 +57,7 @@ NetworkSettings::NetworkSettings(QWidget *parent, const QString &image, int prof
         this->profile = profile;
         confs         = new netcard_conf_t[NET_CARD_MAX]();
         megatouch_network_load(this->image.constData(), profile, confs);
-        page->setOffline(confs, machine_get_machine_from_internal_name(mt_profiles[profile].machine),
-                         megatouch_network_card_for(profile));
+        page->setOffline(confs, machine_get_machine_from_internal_name(mt_profiles[profile].machine), profile);
     }
 
     const auto buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);

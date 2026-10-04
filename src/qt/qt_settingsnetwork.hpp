@@ -22,7 +22,7 @@ public:
 
     void restore();
     void save(int soft);
-    void setOffline(struct netcard_conf_t *confs, int machineId, const char *card);
+    void setOffline(struct netcard_conf_t *confs, int machineId, int profile);
 
 public slots:
     void onCurrentMachineChanged(int machineId);
@@ -41,7 +41,7 @@ private:
     int                  machineId = 0;
     struct netcard_conf_t *conf;   /* what the page shows and saves: net_cards_conf, or setOffline()'s */
     bool                 offline   = false;
-    const char          *offlineCard = nullptr;
+    int                  offlineProfile = -1;
 
     int                  net_card_cfg_changed[4] = { 0, 0, 0, 0 };
 

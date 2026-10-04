@@ -88,13 +88,16 @@ typedef struct net_card_migrate_t {
    for the broadband adapter an operator could fit -- and for the DOS MAXX
    releases the ISA TRENDnet TE-16XP at 0x340, which every one of them from
    MAXX 2K on drives (the later ones also knew the newer TE-16PT; one card
-   that works everywhere is enough, and a saved "te16pt" becomes the TE-16XP). */
+   that works everywhere is enough, and a saved "te16pt" becomes the TE-16XP).
+   The TRENDnet TE100-PC16, a PC Card in the I/O board's slot (src/pcmcia),
+   can be fitted on those releases instead: MAXX 1st's CardSoft drives it. */
 static const NETWORK_CARD net_cards[] = {
     // clang-format off
     { &device_none                },
     { &device_internal            },
     { &rtl8139c_plus_device       },
     { &te16xp_device              },
+    { &te100pc16_device           },
     { NULL                        }
     // clang-format on
 };

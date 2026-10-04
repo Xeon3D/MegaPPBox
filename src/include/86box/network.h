@@ -258,6 +258,9 @@ extern const device_t rtl8139c_plus_device;
 /* TRENDnet TE-16XP (NE2000 + D-Link EEPROM/ID PROM, jumperless at 0x340) */
 extern const device_t te16xp_device;
 
+/* TRENDnet TE100-PC16 (PC Card, AX88190), in the MAXX I/O board's socket A */
+extern const device_t te100pc16_device;
+
 /* Intel 8255x */
 extern const device_t i82557_device;
 extern const device_t i82558_device;

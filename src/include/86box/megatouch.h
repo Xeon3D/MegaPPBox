@@ -98,6 +98,7 @@ extern void megatouch_set_image_option(const char *image, const char *name, int 
 extern void megatouch_network_to_image(void);
 extern const char *megatouch_network_card(void);
 extern const char *megatouch_network_card_for(int profile);
+extern int         megatouch_network_card_fits(int profile, const char *card);
 struct netcard_conf_t;
 extern int megatouch_network_saved(int k, struct netcard_conf_t *nc);
 /* ...and for an image that is not running (the Machine Manager): its saved

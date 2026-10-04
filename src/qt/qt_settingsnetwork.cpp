@@ -214,11 +214,11 @@ SettingsNetwork::SettingsNetwork(QWidget *parent)
 /* MegaPPBox: the Network dialog on an image that is not running (the Machine
    Manager's): its settings in confs, its profile's board and card. */
 void
-SettingsNetwork::setOffline(netcard_conf_t *confs, int machineId, const char *card)
+SettingsNetwork::setOffline(netcard_conf_t *confs, int machineId, int profile)
 {
-    conf        = confs;
-    offline     = true;
-    offlineCard = card;
+    conf           = confs;
+    offline        = true;
+    offlineProfile = profile;
     onCurrentMachineChanged(machineId);
     enableElements(ui);
 }
@@ -360,7 +360,7 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
     int                 removeRows_[NET_CARD_MAX]  = { 0 };
     int                 selectedRows[NET_CARD_MAX] = { 0 };
     int                 m_has_net                  = machine_has_flags(machineId, MACHINE_NIC);
-    const char         *mt_card                    = offline ? offlineCard : megatouch_network_card();
+    const int           mtProfile                  = offline ? offlineProfile : megatouch_profile();
     netcard_conf_t      shown[NET_CARD_MAX];
 
     /* MegaPPBox: with the image's network option off there is no card, but
@@ -393,9 +393,14 @@ SettingsNetwork::onCurrentMachineChanged(int machineId)
         if (name.isEmpty())
             break;
 
-        /* MegaPPBox: "None" and the profile's own card only. */
+        /* MegaPPBox: "None" and the profile's own card.  (The TE100-PC16 PC
+           Card fits MAXX (Old) too, set in the config: no release's Mega-Link
+           drives it, so it is offered only to an image already fitted
+           with it.) */
+        const char *own = megatouch_network_card_for(mtProfile);
         if (network_card_available(c) &&
-            ((c == 0) || (mt_card && !strcmp(network_card_get_internal_name(c), mt_card)))) {
+            ((c == 0) || (own && !strcmp(network_card_get_internal_name(c), own)) ||
+             (c == conf[0].device_num))) {
             if (device_is_valid(network_card_getdevice(c), machineId)) {
                 for (uint8_t i = 0; i < NET_CARD_MAX; ++i) {
                     if ((c != 1) || ((i == 0) && m_has_net)) {

@@ -7,4 +7,5 @@
 
 add_library(pcmcia OBJECT
     merit_pcic.c
+    net_te100pc16.c
 )
