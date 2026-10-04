@@ -33,7 +33,6 @@ add_library(dev OBJECT
     mouse_microtouch_touchscreen.c
     merit_trace.c
     merit_io.c
-    merit_pcic.c
     mouse_ps2.c
     mouse_serial.c
     pci_bridge.c

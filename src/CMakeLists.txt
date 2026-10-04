@@ -143,6 +143,7 @@ target_link_libraries(86Box
     mem
     fdd
     game
+    pcmcia
     cdrom
     hdd
     net
@@ -312,6 +313,7 @@ add_subdirectory(device)
 add_subdirectory(disk)
 add_subdirectory(floppy)
 add_subdirectory(network)
+add_subdirectory(pcmcia)
 add_subdirectory(game)
 add_subdirectory(machine)
 add_subdirectory(mem)
